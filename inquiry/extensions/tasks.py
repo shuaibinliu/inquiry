@@ -50,9 +50,9 @@ def cancel_async_task(conn_id):
 def auto_cancle_order(omid):
     try:
         # for omid in omids:
-        from tickets.control.COrder import COrder
-        from tickets.models import OrderMain
-        from tickets.config.enums import OrderStatus
+        from inquiry.control.COrder import COrder
+        from inquiry.models import OrderMain
+        from inquiry.config.enums import OrderStatus
         order_main = OrderMain.query.filter(OrderMain.isdelete == false(),
                                             OrderMain.OMstatus == OrderStatus.wait_pay.value,
                                             OrderMain.OMid == omid).first()
@@ -99,7 +99,7 @@ def start_product(prid):
 @celery.task()
 def end_product(prid):
     current_app.logger.info('修改限时商品为结束 prid {}'.format(prid))
-    from tickets.control.COrder import COrder
+    from inquiry.control.COrder import COrder
     try:
         with db.auto_commit():
             product = Product.query.filter(Product.isdelete == false(), Product.PRid == prid).first()
@@ -118,7 +118,7 @@ def end_product(prid):
         current_app.logger.info('修改抢票为结束任务完成 prid {}'.format(prid))
 
 # if __name__ == '__main__':
-#     from tickets import create_app
+#     from inquiry import create_app
 #
 #     app = create_app()
 #     with app.app_context():

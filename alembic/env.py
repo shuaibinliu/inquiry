@@ -9,7 +9,7 @@ sys.path.append(os.path.realpath('.'))
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
-from tickets.config.secret import DB_PARAMS
+from inquiry.config.secret import DB_PARAMS
 
 config = context.config
 config.set_main_option('sqlalchemy.url', DB_PARAMS)
@@ -22,7 +22,7 @@ fileConfig(config.config_file_name)
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-from tickets import models
+from inquiry import models
 
 target_metadata = models.Base.metadata
 

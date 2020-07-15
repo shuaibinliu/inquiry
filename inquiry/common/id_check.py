@@ -3,7 +3,7 @@
 import requests
 import json
 
-from tickets.config.secret import ID_CHECK_APPCODE
+from inquiry.config.secret import ID_CHECK_APPCODE
 
 url = 'https://1.api.apistore.cn/idcard3'
 

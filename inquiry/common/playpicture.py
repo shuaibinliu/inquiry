@@ -33,7 +33,7 @@ class MyGaussianBlur(ImageFilter.Filter):
 class PlayPicture():
     # res_path = '../extensions/staticres/'
     def __init__(self):
-        self.res_path = os.path.join(current_app.config['BASEDIR'], 'tickets', 'extensions', 'staticres')
+        self.res_path = os.path.join(current_app.config['BASEDIR'], 'inquiry', 'extensions', 'staticres')
         self.pro_1 = '来下沙，享优惠!'
         self.pro_2 = '长按扫码加入我们'
         self.pro_3 = '来下沙，享优惠！'

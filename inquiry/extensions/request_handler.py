@@ -89,7 +89,7 @@ def _invitation_records():
     secret_user_id = request.args.to_dict().get('secret_usid')
     if not secret_user_id:
         return
-    from tickets.extensions.interface.user_interface import is_user
+    from inquiry.extensions.interface.user_interface import is_user
     if not is_user():
         return
     current_app.logger.info('>>>>>>>>record invitation<<<<<<<<')
@@ -103,8 +103,8 @@ def _invitation_records():
     if inviter_id == usid:
         current_app.logger.info('inviter == invitee')
         return
-    from tickets.models.user import UserInvitation
-    from tickets.extensions.register_ext import db
+    from inquiry.models.user import UserInvitation
+    from inquiry.extensions.register_ext import db
     import uuid
     try:
         with db.auto_commit():
@@ -139,7 +139,7 @@ def request_first_handler(app):
         token = parameter.get('token')
         user = token_to_user_(token)
         if token and not user:
-            from tickets.extensions.error_response import TokenError
+            from inquiry.extensions.error_response import TokenError
             raise TokenError('登录超时，请重新登录')
         if user:  # 访问记录
             user_access_api_records(user)

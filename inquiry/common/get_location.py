@@ -2,8 +2,8 @@ import json
 import uuid
 
 import requests
-from tickets.config.secret import TencentMapKey, TencentMapSK
-from tickets.extensions.error_response import SystemError
+from inquiry.config.secret import TencentMapKey, TencentMapSK
+from inquiry.extensions.error_response import SystemError
 import hashlib
 
 
