@@ -1,6 +1,7 @@
 from ..control.CIndex import CIndex
 from ..extensions.base_resource import Resource
 
+
 class AUser(Resource):
     def __init__(self):
         self.cindex = CIndex()
