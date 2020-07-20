@@ -28,7 +28,9 @@ class Banner(Base):
     __tablename__ = 'Banner'
     BNid = Column(String(64), primary_key=True)
     BNurl = Column(Text, url=True, comment='图片url')
+    ADid = Column(String(64), comment='创建者ID')
     BNshow = Column(Boolean, default=False, comment='是否展示')
+    BNsort = Column(Integer, comment='顺序')
     contentlink = Column(LONGTEXT, comment='跳转链接')
 
 
