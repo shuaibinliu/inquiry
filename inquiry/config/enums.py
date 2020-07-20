@@ -719,6 +719,11 @@ class SupplizerGrade(Enum):
     ticket = 1, '门票供应商'
 
 
+class WhiteListAction(Enum):
+    putin = 10, '放入白名单'
+    delete = 20, '从白名单删除'
+
+
 if __name__ == '__main__':
     print(TemplateID('enterlog').zh_value)
     # import

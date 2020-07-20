@@ -71,8 +71,8 @@ def get_current_admin():
     from ...models import Admin
     return Admin.query.filter(Admin.ADid == adid, Admin.isdelete == False).first_('用户信息有误')
 
-
-def get_current_supplizer():
-    suid = request.user.id
-    from ...models import Supplizer
-    return Supplizer.query.filter(Supplizer.SUid == suid, Supplizer.isdelete == False).first_('用户信息有误')
+#
+# def get_current_supplizer():
+#     suid = request.user.id
+#     from ...models import Supplizer
+#     return Supplizer.query.filter(Supplizer.SUid == suid, Supplizer.isdelete == False).first_('用户信息有误')
