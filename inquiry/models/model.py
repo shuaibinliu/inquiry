@@ -142,3 +142,28 @@ class Admin(Base):
 # class WhiteList(Base):
 #     """白名单"""
 #     WLid = Column(String())
+
+
+class AdminActions(Base):
+    """
+    记录管理员行为
+    """
+    __tablename__ = 'AdminAction'
+    AAid = Column(String(64), primary_key=True)
+    ADid = Column(String(64), comment='管理员id')
+    AAaction = Column(Integer, default=1, comment='管理员行为, {1: 添加, 2: 删除 3: 修改}')
+    AAmodel = Column(String(255), comment='操作的数据表')
+    AAdetail = Column(LONGTEXT, comment='请求的data')
+    AAkey = Column(String(255), comment='操作数据表的主键的值')
+
+
+class AdminNotes(Base):
+    """
+    管理员变更记录
+    """
+    __tablename__ = 'AdminNotes'
+    ANid = Column(String(64), primary_key=True)
+    ADid = Column(String(64), nullable=False, comment='管理员id')
+    ANaction = Column(Text, comment='变更动作')
+    ANdoneid = Column(String(64), comment='修改人id')
+
