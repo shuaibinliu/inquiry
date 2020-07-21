@@ -136,7 +136,7 @@ wxminiprogram/
 wxservice/
 wxsubscribe_dir/
 miniprogram_dir/
-tickets/config/secret.py
-tickets/config/http_config.py
+inquiry/config/secret.py
+inquiry/config/http_config.py
 pem/
 
