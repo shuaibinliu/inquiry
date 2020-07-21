@@ -50,6 +50,7 @@ class UserHistory(Base):
     UHparams = Column(Text, comment='查询参数')
     PRid = Column(String(64), comment="产品ID")
     UHprice = Column(DECIMAL(precision=28, scale=2), comment='计算得出价格')
+    UHfile = Column(Text, comment='生成文件路径')
 
 
 class Product(Base):
@@ -58,6 +59,8 @@ class Product(Base):
     PRid = Column(String(64), primary_key=True)
     PRname = Column(Text, comment='产品名')
     PCid = Column(String(64), comment='分类ID')
+    ADid = Column(String(64), comment='最后一次操作人ID')
+    PRsort = Column(Integer, default=0, comment='商品权重')
 
 
 class ProductCategory(Base):
@@ -66,6 +69,8 @@ class ProductCategory(Base):
     PCid = Column(String(64), primary_key=True)
     PCname = Column(Text, comment='分类名')
     PCurl = Column(Text, comment='跳转URL')
+    PCicon = Column(Text, url=True, comment='icon')
+    PCsort = Column(Integer, default=0, comment='分类权重')
 
 
 class ProductParams(Base):
@@ -75,19 +80,37 @@ class ProductParams(Base):
     PRid = Column(String(64), comment='产品ID')
     PPname = Column(Text, comment='参数名')
     PPrequired = Column(Boolean, default=False, comment='是否必填')
-    PPtype = Column(Integer, default=10, comment='10 数字 20 单选 30 立柱 40 地铁参数')
-    PPfront = Column(String(64), comment='前置参数选项')
-    PPoptions = Column(Text, comment='如果是单选 或者 立柱、地铁参数的选项')
+    PPtype = Column(Integer, default=10, comment='10 长， 20 宽 30 单选 40 立柱 50 地铁参数')
+    # PPfront = Column(String(64), comment='前置参数选项')
+    PPunit = Column(String(64), comment='单位')
+    # PPfrontValue = Column(Text, comment='前置项参数值')
+    # PPoptions = Column(Text, comment='如果是单选 或者 立柱、地铁参数的选项')
     PPremarks = Column(Text, comment='参数备注')
+    PPsort = Column(Integer, default=0, comment='参数权重')
 
 
-class Pillars(Base):
-    """立柱样式"""
-    __tablename__ = 'Pillars'
-    PIid = Column(String(64), primary_key=True)
-    PIurl = Column(Text, url=True, comment='图片URL')
+class ProductParamsValue(Base):
+    """产品参数值"""
+    PPVid = Column(String(64), primary_key=True)
+    PPid = Column(String(64), comment='参数ID')
+    PPVvalue = Column(Text, comment='参数值')
+    PPVprice = Column(DECIMAL(precision=28, scale=2), comment='单价')
+
+
+#
+# class Pillars(Base):
+#     """立柱样式"""
+#     __tablename__ = 'Pillars'
+#     PIid = Column(String(64), primary_key=True)
+#     PIurl = Column(Text, url=True, comment='图片URL')
+#     PPid = Column(String(64), comment='参数')
+#     PIprice = Column(DECIMAL(precision=28, scale=2), comment='单价')
+
+class FrontParams(Base):
+    """前置参数值"""
+    FPid = Column(String(64), primary_key=True)
     PPid = Column(String(64), comment='参数')
-    PIprice = Column(DECIMAL(precision=28, scale=2), comment='单价')
+    PPVid = Column(String(64), comment='前置参数值')
 
 
 class UnitCategory(Base):
@@ -95,6 +118,7 @@ class UnitCategory(Base):
     __tablename__ = 'UnitCategory'
     UCid = Column(String(64), primary_key=True)
     UCname = Column(Text, comment='分类名')
+    UCsort = Column(Integer, default=0, comment='部件分类权重')
 
 
 class Unit(Base):
@@ -139,6 +163,8 @@ class Admin(Base):
     ADheader = Column(Text, comment='头像', url=True)
     ADlevel = Column(Integer, default=2, comment='管理员等级，{1: 超级管理员, 2: 普通管理员}')
     ADstatus = Column(Integer, default=0, comment='账号状态，{0:正常, 1: 被冻结, 2: 已删除}')
+
+
 # class WhiteList(Base):
 #     """白名单"""
 #     WLid = Column(String())
@@ -167,3 +193,15 @@ class AdminNotes(Base):
     ANaction = Column(Text, comment='变更动作')
     ANdoneid = Column(String(64), comment='修改人id')
 
+
+class UserAccessApi(Base):
+    """记录访问api的信息"""
+    __tablename__ = 'UserAccessApi'
+    UAAid = Column(String(64), primary_key=True)
+    USid = Column(String(64), nullable=False, comment='用户id')
+    ULA = Column(String(64), comment='请求api地址')
+    USTip = Column(String(64), comment='登录ip地址')
+    OSVersion = Column(String(25), comment='手机系统版本')
+    PhoneModel = Column(String(16), comment='手机型号')
+    WechatVersion = Column(String(16), comment='微信版本')
+    NetType = Column(String(10), comment='用户网络')
