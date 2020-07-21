@@ -11,7 +11,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from inquiry.common.default_head import GithubAvatarGenerator
 from inquiry.config.enums import AdminLevel, AdminStatus, UserLoginTimetype, WhiteListAction, AdminAction, AdminActionS
 from inquiry.config.secret import MiniProgramAppId, MiniProgramAppSecret
-from inquiry.extensions.error_response import TokenError, WXLoginError, ParamsError, AuthorityError
+from inquiry.extensions.error_response import TokenError, WXLoginError, ParamsError, AuthorityError, NotFound
 from inquiry.extensions.interface.user_interface import token_required, admin_required, get_current_admin, is_admin
 from inquiry.extensions.params_validates import parameter_required
 from inquiry.extensions.register_ext import db
@@ -120,7 +120,8 @@ class CUser(object):
 
         token = usid_to_token(user.USid, level=user.USlevel, username=user.USname)
         binded_phone = True if user and user.UStelephone else False
-        data = {'token': token, 'binded_phone': binded_phone, 'session_key': session_key}
+        inwhitelist = bool(user and user.USinWhiteList)
+        data = {'token': token, 'binded_phone': binded_phone, 'inwhitelist': inwhitelist, 'session_key': session_key}
         current_app.logger.info('return_data : {}'.format(data))
         return Success('登录成功', data=data)
 
@@ -281,7 +282,6 @@ class CUser(object):
 
         return Success(data='{}修改成功'.format(user.USname))
 
-
     @token_required
     def update_admin_password(self):
         """更新管理员密码"""
@@ -434,7 +434,8 @@ class CUser(object):
             self.__check_adname(data.get("adname"), filter_adid)
 
             update_admin = {k: v for k, v in update_admin.items() if v or v == 0}
-            update_result = Admin.query.filter(Admin.ADid == filter_adid, Admin.isdelete == false()).update(update_admin)
+            update_result = Admin.query.filter(Admin.ADid == filter_adid, Admin.isdelete == false()).update(
+                update_admin)
             if not update_result:
                 raise ParamsError('管理员不存在')
             filter_admin = Admin.query.filter(Admin.isdelete == false(), Admin.ADid == filter_adid).first_('管理员不存在')
@@ -475,3 +476,14 @@ class CUser(object):
         if not admin:
             return 100000
         return admin.ADnum + 1
+
+    @staticmethod
+    def test_login():
+        """测试登录"""
+        data = parameter_required()
+        tel = data.get('ustelephone')
+        user = User.query.filter(User.isdelete == false(), User.UStelephone == tel).first()
+        if not user:
+            raise NotFound
+        token = usid_to_token(user.USid, model='User', username=user.USname)
+        return Success(data={'token': token, 'usname': user.USname})

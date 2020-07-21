@@ -17,6 +17,7 @@ class AUser(Resource):
         apis = {
             'mp_login': self.cuser.mini_program_login,
             'bind_phone': self.cuser.bind_phone,
+            'test_login': self.cuser.test_login,
             'update_white_list': self.cuser.update_white_list,
             'admin_login': self.cuser.admin_login,  # 管理员登录
             'add_admin_by_superadmin': self.cuser.add_admin_by_superadmin,  # 添加管理员
