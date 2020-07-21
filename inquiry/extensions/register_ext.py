@@ -46,7 +46,7 @@ conn = redis.Redis(host='localhost', port=6379, db=1)
 celery = Celery()
 
 
-def register_ext(app, logger_file='/tmp/qixing/'):
+def register_ext(app, logger_file='/tmp/inquiry/'):
     db.init_app(app)
     celery.init_app(app)
     LoggerHandler(app, file=logger_file).error_handler()
