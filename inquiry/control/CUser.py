@@ -119,7 +119,7 @@ class CUser(object):
             db.session.add(userloggintime)
 
         token = usid_to_token(user.USid, level=user.USlevel, username=user.USname)
-        binded_phone = True if user and user.UStelephone else False
+        binded_phone = True if user and user.UStelphone else False
         inwhitelist = bool(user and user.USinWhiteList)
         data = {'token': token, 'binded_phone': binded_phone, 'inwhitelist': inwhitelist, 'session_key': session_key}
         current_app.logger.info('return_data : {}'.format(data))
@@ -134,7 +134,7 @@ class CUser(object):
             raise ParamsError('为获得更优质的服务，请允许授权您的手机号码')
 
         user = self._get_exist_user((User.USid == getattr(request, 'user').id,))
-        if user.UStelephone:
+        if user.UStelphone:
             raise TokenError('您已绑定过手机号码')
 
         session_key = data.get('session_key')
@@ -152,11 +152,11 @@ class CUser(object):
         phonenumber = encrypted_user_info.get('phoneNumber')
         covered_number = str(phonenumber).replace(str(phonenumber)[3:7], '*' * 4)
 
-        if self._get_exist_user((User.USid != getattr(request, 'user').id, User.UStelephone == phonenumber)):
+        if self._get_exist_user((User.USid != getattr(request, 'user').id, User.UStelphone == phonenumber)):
             raise ParamsError(f'该手机号({covered_number})已被其他用户绑定，请联系客服处理')
 
         with db.auto_commit():
-            user.update({'UStelephone': phonenumber})
+            user.update({'UStelphone': phonenumber})
             db.session.add(user)
             res_user = user
 
@@ -481,8 +481,8 @@ class CUser(object):
     def test_login():
         """测试登录"""
         data = parameter_required()
-        tel = data.get('ustelephone')
-        user = User.query.filter(User.isdelete == false(), User.UStelephone == tel).first()
+        tel = data.get('ustelphone')
+        user = User.query.filter(User.isdelete == false(), User.UStelphone == tel).first()
         if not user:
             raise NotFound
         token = usid_to_token(user.USid, model='User', username=user.USname)
