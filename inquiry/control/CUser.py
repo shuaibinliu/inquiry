@@ -258,16 +258,17 @@ class CUser(object):
         admin = get_current_admin()
         if not admin:
             raise AuthorityError
-        data = parameter_required("usid", "action")
+        data = parameter_required(("usid", "action"))
         usid = data.get('usid')
-        action = data.get('action', 0)
+        action = data.get("action", 10)
+
         if action:
             try:
                 action = WhiteListAction(int(action)).value
             except:
                 raise ParamsError('action 只能是整数')
 
-        user = User.queruy.filter(User.USid == usid, User.isdelete == false()).first()
+        user = User.query.filter(User.USid == usid, User.isdelete == false()).first()
         if not user:
             raise ParamsError('用户不在本系统')
         with db.auto_commit():
@@ -279,7 +280,9 @@ class CUser(object):
                 if not user.USinWhiteList:
                     raise ParamsError('用户不在白名单')
                 user.USinWhiteList = False
-
+            else:
+                raise ParamsError('参数异常')
+            db.session.add(user)
         return Success(data='{}修改成功'.format(user.USname))
 
     @token_required
@@ -295,11 +298,12 @@ class CUser(object):
         pwd_repeat = data.get('password_repeat')
         if pwd_new != pwd_repeat:
             raise ParamsError('两次输入的密码不同')
-        if admin:
+        with db.auto_commit():
             if check_password_hash(admin.ADpassword, pwd_old):
                 self.__check_password(pwd_new)
                 admin.ADpassword = generate_password_hash(pwd_new)
                 # BASEADMIN().create_action(AdminActionS.update.value, 'none', 'none')
+                db.session.add(admin)
                 return Success('更新密码成功')
             current_app.logger.info('{0} update pwd failed'.format(admin.ADname))
             raise ParamsError('旧密码有误')

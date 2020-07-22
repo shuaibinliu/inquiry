@@ -724,6 +724,14 @@ class WhiteListAction(Enum):
     delete = 20, '从白名单删除'
 
 
+class UnitType(Enum):
+    wide = 10, '宽'
+    high = 20, '高'
+    perimeter = 30, '周长'
+    area = 40, '面积'
+    cost = 50, '成本'
+
+
 if __name__ == '__main__':
     print(TemplateID('enterlog').zh_value)
     # import

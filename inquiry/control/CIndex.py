@@ -16,7 +16,7 @@ class CIndex(object):
         filter_args = [Banner.isdelete == false(), ]
         if not is_admin():
             filter_args.append(Banner.BNshow == true())
-        mpbs = Banner.query.filter(*filter_args).order_by(Banner.BNsort.asc(),
+        mpbs = Banner.query.filter(*filter_args).order_by(Banner.BNsort.desc(),
                                                           Banner.createtime.desc()).all()
         [x.hide('ADid') for x in mpbs]
         return Success(data=mpbs)

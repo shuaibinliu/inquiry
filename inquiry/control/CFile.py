@@ -12,7 +12,7 @@ from inquiry.extensions.success_response import Success
 from inquiry.extensions.interface.user_interface import is_anonymous, token_required
 from inquiry.common.video_thumbnail import video2frames
 from inquiry.extensions.register_ext import qiniu_oss
-
+from inquiry.config.http_config import HTTP_HOST
 
 class CFile(object):
 
@@ -35,7 +35,7 @@ class CFile(object):
         file_data, video_thum, video_dur, upload_type = self._upload_file(file, folder)
         # return Success('上传成功', data={'url': file_data, 'video_thum': video_thum, 'video_dur': video_dur,
         #                              'upload_type': upload_type})
-
+        file_data = HTTP_HOST + file_data
         return Success('上传成功', data=file_data).get_body(video_thum=video_thum, video_dur=video_dur,
                                                         upload_type=upload_type)
 

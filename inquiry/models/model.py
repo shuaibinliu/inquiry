@@ -127,6 +127,7 @@ class Unit(Base):
     UNid = Column(String(64), primary_key=True)
     UCid = Column(String(64), comment='分类ID')
     PRid = Column(String(64), comment='商品ID')
+    PCid = Column(String(64), comment='商品分类ID')
     UCrequired = Column(Boolean, default=False, comment='是否必选 必选计算项不额外计算')
     UNunit = Column(String(64), comment='单位')
     UNunitPrice = Column(DECIMAL(precision=28, scale=2), comment='单价')
