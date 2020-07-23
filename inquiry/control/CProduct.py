@@ -459,7 +459,8 @@ class CProduct(object):
         ppvidlist = []
         try:
             for param in params:
-                ppvidlist.append(param.get('ppvid'))
+                if param.get('ppvid'):
+                    ppvidlist.append(param.get('ppvid'))
                 pptype = int(param.get('pptype'))
                 if pptype == ProductParamsType.wide.value:
                     wide = Decimal(param.get('value'))
