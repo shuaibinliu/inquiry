@@ -80,7 +80,7 @@ class ProductParams(Base):
     PRid = Column(String(64), comment='产品ID')
     PPname = Column(Text, comment='参数名')
     PPrequired = Column(Boolean, default=False, comment='是否必填')
-    PPtype = Column(Integer, default=10, comment='10 长， 20 宽 30 单选 40 立柱 50 地铁参数')
+    PPtype = Column(Integer, default=10, comment='10 长， 20 宽 30 单选 40 立柱 50 地铁参数 60 高')
     # PPfront = Column(String(64), comment='前置参数选项')
     PPunit = Column(String(64), comment='单位')
     # PPfrontValue = Column(Text, comment='前置项参数值')
@@ -134,6 +134,7 @@ class Unit(Base):
     UNname = Column(Text, comment='参数名')
     UNtype = Column(Integer, default=10, comment='10 宽 20 高 30 周长 40 面积 50 ')
     UNlimit = Column(DECIMAL(precision=28, scale=2), comment='限制条件')
+    PPVid = Column(String(64), comment='参数限制')
 
 
 class UserLoginTime(Base):

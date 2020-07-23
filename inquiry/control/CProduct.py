@@ -1,16 +1,18 @@
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import false
+from flask import request
+from sqlalchemy import false, or_
 
-from inquiry.config.enums import UnitType
+from inquiry.config.enums import UnitType, ProductParamsType
 from inquiry.extensions.error_response import ParamsError, AuthorityError
 from inquiry.extensions.interface.user_interface import admin_required, get_current_admin, is_admin, get_current_user, \
-    is_user
+    is_user, token_required
 from inquiry.extensions.params_validates import parameter_required
 from inquiry.extensions.register_ext import db
 from inquiry.extensions.success_response import Success
-from inquiry.models import Product, ProductCategory, ProductParams, ProductParamsValue, FrontParams, UnitCategory, Unit
+from inquiry.models import Product, ProductCategory, ProductParams, ProductParamsValue, FrontParams, UnitCategory, Unit, \
+    UserLevelSetting
 
 
 class CProduct(object):
@@ -42,7 +44,8 @@ class CProduct(object):
                     raise ParamsError('缺少分类ID')
 
                 product_dict['PRid'] = str(uuid.uuid1())
-                product = Product.create({product_dict})
+                product = Product.create(product_dict)
+                msg = '添加成功'
 
             else:
                 product = Product.query.filter(Product.PRid == prid, Product.isdelete == false()).first_('产品已删除')
@@ -57,10 +60,11 @@ class CProduct(object):
             db.session.add(product)
         return Success(message=msg, data={'prid': product.PRid})
 
+    @token_required
     def list(self):
         data = parameter_required()
         filter_args = [Product.isdelete == false(), ProductCategory.isdelete == false()]
-        if is_admin:
+        if is_admin():
             _ = get_current_admin()
         elif is_user():
             user = get_current_user()
@@ -86,8 +90,9 @@ class CProduct(object):
             ProductCategory.PCid == product.PCid, ProductCategory.isdelete == false()).first()
         product.fill('pcname', pc.PCname)
 
+    @token_required
     def get(self):
-        if is_admin:
+        if is_admin():
             _ = get_current_admin()
         elif is_user():
             user = get_current_user()
@@ -130,7 +135,8 @@ class CProduct(object):
                 if not pcicon:
                     raise ParamsError('缺少icon')
                 pc_dict['PCid'] = str(uuid.uuid1())
-                pc = Product.create({pc_dict})
+                pc = ProductCategory.create(pc_dict)
+                msg = '添加成功'
 
             else:
                 pc = ProductCategory.query.filter(
@@ -146,6 +152,7 @@ class CProduct(object):
             db.session.add(pc)
         return Success(message=msg, data={'pcid': pc.PCid})
 
+    @token_required
     def list_pc(self):
         pc_list = ProductCategory.query.filter(ProductCategory.isdelete == false()).order_by(
             ProductCategory.PCsort.desc(), ProductCategory.createtime.desc()).all()
@@ -165,23 +172,36 @@ class CProduct(object):
         if prid:
             _ = Product.query.filter(Product.PRid == prid, Product.isdelete == false()).first_('商品已删除')
             pp_dict['PRid'] = prid
-        if pprequired:
-            pp_dict['PCicon'] = pprequired
+        # if pprequired:
+        pp_dict['PPrequired'] = bool(pprequired)
         if ppsort:
             try:
                 ppsort = int(ppsort)
             except:
                 raise ParamsError('权重只能是整数')
             pp_dict['PPsort'] = ppsort
+        if pptype:
+            try:
+                pptype = ProductParamsType(int(pptype)).value
+            except:
+                raise ParamsError('类型有误')
+            pp_dict['PPtype'] = pptype
+        if ppunit:
+            pp_dict['PPunit'] = ppunit
+        if ppremarks:
+            pp_dict['PPremarks'] = ppremarks
+
         with db.auto_commit():
             if not ppid:
-                if not prid:
-                    raise ParamsError('需绑定产品')
+                # if not prid:
+                #     raise ParamsError('需绑定产品')
                 if not ppname:
                     raise ParamsError('缺少参数名')
+                if not pptype:
+                    raise ParamsError('缺少参数类型')
                 pp_dict['PPid'] = str(uuid.uuid1())
-                pp = ProductParams.create({pp_dict})
-
+                pp = ProductParams.create(pp_dict)
+                msg = '添加成功'
             else:
                 pp = ProductParams.query.filter(
                     ProductParams.PPid == ppid, ProductParams.isdelete == false()).first_('参数已删除')
@@ -202,10 +222,11 @@ class CProduct(object):
                     ppvvalue = ppv.get('ppvvalue')
                     ppvprice = ppv.get('ppvprice', 0)
                     ppvid = ppv.get('ppvid')
-                    try:
-                        ppvprice = Decimal(str(ppvprice))
-                    except:
-                        raise ParamsError('单价只能是数字')
+                    if ppvprice:
+                        try:
+                            ppvprice = Decimal(str(ppvprice))
+                        except:
+                            raise ParamsError('单价只能是数字')
                     ppvdict = {'PPid': pp.PPid, "PPVvalue": ppvvalue, "PPVprice": ppvprice}
                     if ppvid:
                         ppv_instance = ProductParamsValue.query.filter(
@@ -218,25 +239,33 @@ class CProduct(object):
                     else:
                         ppvdict.setdefault('PPVid', str(uuid.uuid1()))
                         ppv_instance = ProductParamsValue.create(ppvdict)
-                    if ppv.get('frontid'):
+                    if ppv.get('frontid') and ppv.get('frontid') != pp.PPid:
+
                         front = ProductParams.query.filter(
                             ProductParams.PPid == ppv.get('frontid')).first_("后续参数已删除")
+                        fp_instance = FrontParams.query.filter(
+                            FrontParams.PPid == front.PPid,
+                            FrontParams.PPVid == ppv_instance.PPVid, FrontParams.isdelete == false()).first()
+                        if not fp_instance:
+                            fp_instance = FrontParams.create({
+                                "FPid": str(uuid.uuid1()),
+                                "PPid": front.PPid,
+                                "PPVid": ppv_instance.PPVid,
 
-                        fp_instance = FrontParams.create({
-                            "FPid": str(uuid.uuid1()),
-                            "PPid": front.PPid,
-                            "PPVid": ppv_instance.PPVid,
-
-                        })
-                        instance_list.append(fp_instance)
+                            })
+                            instance_list.append(fp_instance)
+                        front.PRid = ""
+                        instance_list.append(front)
                     ppvidlist.append(ppv_instance.PPVid)
                     instance_list.append(ppv_instance)
                 db.session.add_all(instance_list)
-                ProductParamsValue.query.filter(ProductParamsValue.PPid == pp.PPid,
-                                                ProductParamsValue.PPVid.notin_(ppvidlist)).delete_()
+                ProductParamsValue.query.filter(
+                    ProductParamsValue.PPid == pp.PPid,
+                    ProductParamsValue.PPVid.notin_(ppvidlist)).delete_(synchronize_session=False)
 
         return Success(message=msg, data={'ppid': pp.PPid})
 
+    @token_required
     def list_pp(self):
         data = parameter_required(('prid',))
         if is_admin():
@@ -261,14 +290,18 @@ class CProduct(object):
         pvlist = ProductParamsValue.query.filter(
             ProductParamsValue.PPid == pp.PPid, ProductParamsValue.isdelete == false()).order_by(
             ProductParamsValue.createtime.desc()).all()
-        # itemlist = []
+
         for pv in pvlist:
-            fp = FrontParams.query.filter(FrontParams.PPVid == pv.PPVid, FrontParams.isdelete == false()).all()
-            fpp = ProductParams.query.filter(ProductParams.PPid == fp.PPid, ProductParams.isdelete == false()).first()
-            if not fpp:
-                continue
-            self._fill_ppv(fpp)
-            pv.fill('item', fpp)
+            itemlist = []
+            fps = FrontParams.query.filter(FrontParams.PPVid == pv.PPVid, FrontParams.isdelete == false()).all()
+            for fp in fps:
+                fpp = ProductParams.query.filter(ProductParams.PPid == fp.PPid, ProductParams.isdelete == false()).first()
+                if not fpp:
+                    continue
+                self._fill_ppv(fpp)
+                itemlist.append(fpp)
+
+            pv.fill('item', itemlist)
         pp.fill('ppvlist', pvlist)
 
     @admin_required
@@ -288,6 +321,7 @@ class CProduct(object):
             UnitCategory.UCid ==data.get('ucid'), UnitCategory.isdelete == false()).frist_('分类已删除')
         self._fill_uc(uc)
         return Success('获取成功', data=uc)
+
 
     def _fill_uc(self, uc):
         unlist = Unit.query.filter(Unit.isdelete == false(), Unit.UCid == uc.UCid).all()
@@ -400,22 +434,41 @@ class CProduct(object):
             db.session.add(uninstance)
         return Success(message=msg, data={'ucid': uninstance.UNid})
 
+    @token_required
     def calculation(self):
         """通过参数计算价格"""
+        if not is_user():
+            raise AuthorityError
+
+        user = get_current_admin()
+        if not user.USinWhiteList:
+            raise AuthorityError
+
         data = parameter_required(('prid', 'params'))
         prid = data.get('prid')
         product = Product.query.filter(Product.PRid == prid, Product.isdelete == false()).first_('商品已删除')
         params = data.get('params')
+        # 获取价格系数
+        ul = UserLevelSetting.query.filter(
+            UserLevelSetting.ULSlevel == user.USlevel, UserLevelSetting.isdelete == false()).first()
+        coefficient = Decimal(ul.ULScoefficient if ul else 1)
         # 先计算固定成本
+        filter_proudct = [or_(Unit.PRid == product.PRid, Unit.PCid == product.PCid), Unit.isdelete == false()]
+        # 总价
+        mount = Decimal('0')
+        mount_item_list = []
+        unlist = Unit.query.filter(*filter_proudct, Unit.UCrequired == True).all()
+        for un in unlist:
+            unitprice = Decimal(un.UNunitPrice) * coefficient
+            mount_item_list.append("{}: {} 元 {}".format(un.UNname, unitprice, un.UNunit))
+            mount += unitprice
 
-
-
-
+    @token_required
     def download(self):
         """导出"""
         pass
 
-
+    @admin_required
     def useristory(self):
         """用户查询记录"""
         pass

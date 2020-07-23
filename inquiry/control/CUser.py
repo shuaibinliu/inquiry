@@ -491,3 +491,7 @@ class CUser(object):
             raise NotFound
         token = usid_to_token(user.USid, model='User', username=user.USname)
         return Success(data={'token': token, 'usname': user.USname})
+
+    @admin_required
+    def userlevelsetting(self):
+        pass

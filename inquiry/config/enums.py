@@ -727,9 +727,22 @@ class WhiteListAction(Enum):
 class UnitType(Enum):
     wide = 10, '宽'
     high = 20, '高'
-    perimeter = 30, '周长'
-    area = 40, '面积'
-    cost = 50, '成本'
+    pillars = 40, '立柱'
+    metro = 50, '地铁'
+    pillarshigh = 60, '立柱高'
+    perimeter = 70, '周长'
+    area = 80, '面积'
+    cost = 90, '成本'
+    min = 100, '宽高较小值'
+
+
+class ProductParamsType(Enum):
+    wide = 10, '宽'
+    high = 20, '高'
+    single = 30, '单选'
+    pillars = 40, '立柱'
+    metro = 50, '地铁'
+    pillarshigh = 60, '立柱高'
 
 
 if __name__ == '__main__':
