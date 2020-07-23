@@ -2,6 +2,7 @@ import re
 from datetime import datetime
 import os
 import uuid
+from decimal import Decimal
 
 import requests
 from flask import request, current_app
@@ -19,7 +20,7 @@ from inquiry.extensions.request_handler import _get_user_agent
 from inquiry.extensions.success_response import Success
 from inquiry.extensions.token_handler import usid_to_token
 from inquiry.extensions.weixin import WeixinLogin
-from inquiry.models import User, UserLoginTime, Admin, AdminNotes
+from inquiry.models import User, UserLoginTime, Admin, AdminNotes, UserLevelSetting
 
 
 class CUser(object):
@@ -493,5 +494,52 @@ class CUser(object):
         return Success(data={'token': token, 'usname': user.USname})
 
     @admin_required
-    def userlevelsetting(self):
-        pass
+    def get_userlevelsetting(self):
+        admin = get_current_admin()
+        usllist = UserLevelSetting.query.filter(UserLevelSetting.isdelete == false()).all()
+
+        return Success('获取成功', data=usllist)
+
+    @admin_required
+    def set_userlevelsetting(self):
+        admin = get_current_admin()
+        data = parameter_required()
+        ulsid, ulslevel, ulscoeffcient = data.get('ulsid'), data.get('ulslevel'), data.get('ulscoeffcient')
+        ulsdict = {}
+        if ulslevel or ulslevel == 0:
+            try:
+                ulslevel = int(ulslevel)
+            except:
+                raise ParamsError('等级只能是整数')
+            ulsdict['ULSlevel'] = ulslevel
+        if ulscoeffcient or ulscoeffcient == 0:
+            try:
+                ulscoeffcient = Decimal(ulscoeffcient)
+            except:
+                raise ParamsError('系数只能是数字')
+            ulsdict['ULScoefficient'] = ulscoeffcient
+        with db.auto_commit():
+            if not ulsid:
+                if not ulslevel:
+                    raise ParamsError('等级参数缺失')
+                if not ulscoeffcient:
+                    raise ParamsError('系数缺失')
+                ulsdict['ULSid'] = str(uuid.uuid1())
+                # 同级校验
+                uls = UserLevelSetting.query.filter(
+                    UserLevelSetting.isdelete == false(), UserLevelSetting.ULSlevel == ulslevel).first()
+                if uls:
+                    raise ParamsError('该等级已设置对应系数')
+                ulsinstance = UserLevelSetting.create(ulsdict)
+                msg = '添加成功'
+            else:
+                ulsinstance = UserLevelSetting.query.filter(
+                    UserLevelSetting.isdelete == false(), UserLevelSetting.ULSid == ulsid).first_('系数设置已删除')
+                if data.get('delete'):
+                    ulsinstance.update({'isdelete': True})
+                    msg = '删除成功'
+                else:
+                    ulsinstance.update(ulsdict)
+                    msg = '更新成功'
+            db.session.add(ulsinstance)
+        return Success(msg, data={'ulsid': ulsinstance.ULSid})

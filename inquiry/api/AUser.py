@@ -9,6 +9,7 @@ class AUser(Resource):
     def get(self, user):
         apis = {
             "get_user_list": self.cuser.get_user_list,
+            "get_userlevelsetting": self.cuser.get_userlevelsetting,
             "get_admin_list": self.cuser.get_admin_list
         }
         return apis
@@ -18,6 +19,7 @@ class AUser(Resource):
             'mp_login': self.cuser.mini_program_login,
             'bind_phone': self.cuser.bind_phone,
             'test_login': self.cuser.test_login,
+            'set_userlevelsetting': self.cuser.set_userlevelsetting,
             'update_white_list': self.cuser.update_white_list,
             'admin_login': self.cuser.admin_login,  # 管理员登录
             'add_admin_by_superadmin': self.cuser.add_admin_by_superadmin,  # 添加管理员
