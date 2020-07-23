@@ -733,7 +733,7 @@ class UnitType(Enum):
     perimeter = 70, '周长'
     area = 80, '面积'
     cost = 90, '成本'
-    min = 100, '宽高较小值'
+    minner = 100, '宽高较小值'
 
 
 class ProductParamsType(Enum):

@@ -24,5 +24,6 @@ class AProduct(Resource):
             'set_pp': self.cproduct.set_pp,
             'set_uc': self.cproduct.set_uc,
             'set_un': self.cproduct.set_un,
+            'calculation': self.cproduct.calculation,
         }
         return apis

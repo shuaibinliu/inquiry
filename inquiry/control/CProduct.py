@@ -1,3 +1,4 @@
+import json
 import uuid
 from decimal import Decimal
 
@@ -12,7 +13,7 @@ from inquiry.extensions.params_validates import parameter_required
 from inquiry.extensions.register_ext import db
 from inquiry.extensions.success_response import Success
 from inquiry.models import Product, ProductCategory, ProductParams, ProductParamsValue, FrontParams, UnitCategory, Unit, \
-    UserLevelSetting
+    UserLevelSetting, UserHistory
 
 
 class CProduct(object):
@@ -318,7 +319,7 @@ class CProduct(object):
         admin = get_current_admin()
         data = parameter_required(('ucid'),)
         uc = UnitCategory.query.filter(
-            UnitCategory.UCid ==data.get('ucid'), UnitCategory.isdelete == false()).frist_('分类已删除')
+            UnitCategory.UCid ==data.get('ucid'), UnitCategory.isdelete == false()).first_('分类已删除')
         self._fill_uc(uc)
         return Success('获取成功', data=uc)
 
@@ -440,7 +441,7 @@ class CProduct(object):
         if not is_user():
             raise AuthorityError
 
-        user = get_current_admin()
+        user = get_current_user()
         if not user.USinWhiteList:
             raise AuthorityError
 
@@ -448,25 +449,115 @@ class CProduct(object):
         prid = data.get('prid')
         product = Product.query.filter(Product.PRid == prid, Product.isdelete == false()).first_('商品已删除')
         params = data.get('params')
+        # 参数分析
+        wide = 0
+        high = 0
+        area = 0
+        pillarshigh = 0
+        perimeter = 0
+        minner = 0
+        ppvidlist = []
+        try:
+            for param in params:
+                ppvidlist.append(param.get('ppvid'))
+                pptype = int(param.get('pptype'))
+                if pptype == ProductParamsType.wide.value:
+                    wide = Decimal(param.get('value'))
+                elif pptype == ProductParamsType.high.value:
+                    high = Decimal(param.get('value'))
+                elif pptype == ProductParamsType.pillarshigh.value:
+                    pillarshigh = Decimal(param.get('value'))
+        except:
+            raise ParamsError('参数异常')
+
+        area = wide * high
+        perimeter = 2 * (wide + high)
+        minner = min(wide, high)
+
         # 获取价格系数
         ul = UserLevelSetting.query.filter(
             UserLevelSetting.ULSlevel == user.USlevel, UserLevelSetting.isdelete == false()).first()
         coefficient = Decimal(ul.ULScoefficient if ul else 1)
         # 先计算固定成本
         filter_proudct = [or_(Unit.PRid == product.PRid, Unit.PCid == product.PCid), Unit.isdelete == false()]
-        # 总价
-        mount = Decimal('0')
-        mount_item_list = []
+        # 成本
+        cost = Decimal('0')
+        cost_item_list = []
         unlist = Unit.query.filter(*filter_proudct, Unit.UCrequired == True).all()
         for un in unlist:
-            unitprice = Decimal(un.UNunitPrice) * coefficient
-            mount_item_list.append("{}: {} 元 {}".format(un.UNname, unitprice, un.UNunit))
-            mount += unitprice
+            cost = self._add_price(cost, cost_item_list, un, coefficient)
+        # 计算除人工费的其他费用
+        unlist = Unit.query.filter(
+            *filter_proudct, Unit.UCrequired == False, Unit.UNtype != UnitType.cost.value,
+            or_(Unit.PPVid == None, Unit.PPVid.in_(ppvidlist))
+        ).order_by(Unit.UNtype.asc(), Unit.UNlimit.asc()).all()
+
+        for un in unlist:
+            if un.UNtype == UnitType.wide.value:
+                if wide <= un.UNlimit:
+                    cost = self._add_price(cost, cost_item_list, un, coefficient, wide)
+                continue
+            elif un.UNtype == UnitType.high.value:
+                if high <= un.UNlimit:
+                    cost = self._add_price(cost, cost_item_list, un, coefficient, high)
+                continue
+            elif un.UNtype == UnitType.pillarshigh.value:
+                if pillarshigh <= un.UNlimit:
+                    cost = self._add_price(cost, cost_item_list, un, coefficient, pillarshigh)
+                continue
+            elif un.UNtype == UnitType.perimeter.value:
+                if perimeter <= un.UNlimit:
+                    cost = self._add_price(cost, cost_item_list, un, coefficient, perimeter)
+                continue
+            elif un.UNtype == UnitType.area.value:
+                if area <= un.UNlimit:
+                    cost = self._add_price(cost, cost_item_list, un, coefficient, area)
+                continue
+            elif un.UNtype == UnitType.minner.value:
+                if minner <= un.UNlimit:
+                    cost = self._add_price(cost, cost_item_list, un, coefficient, minner)
+                continue
+            else:
+                cost = self._add_price(cost, cost_item_list, un, coefficient)
+                continue
+
+        # 计算人工费等依赖成本的费用
+        unlist = Unit.query.filter(
+            *filter_proudct, Unit.UCrequired == False, Unit.UNtype == UnitType.cost.value,
+            or_(Unit.PPVid == None, Unit.PPVid.in_(ppvidlist))
+        ).order_by(Unit.UNtype.asc(), Unit.UNlimit.asc()).all()
+        mount = Decimal(0)
+        for un in unlist:
+            mount = self._add_price(cost, cost_item_list, un, coefficient, cost)
+        # 建立表格 todo
+        filepath = ''
+        # 创建查询记录
+        with db.auto_commit():
+            uh = UserHistory.create({
+                "UHid": str(uuid.uuid1()),
+                "USid": user.USid,
+                "UHparams": json.dumps(params),
+                "PRid": prid,
+                "UHprice": mount,
+                "UHfile": filepath
+            })
+            db.session.add(uh)
+        return Success('询价成功', data={"mount": mount, "uhid": uh.UHid})
+
+    def _add_price(self, cost, cost_item_list, un, coefficient, param=1):
+        unitprice = Decimal(un.UNunitPrice) * coefficient * param
+        cost_item_list.append("{}: {} 元 {}".format(un.UNname, unitprice, un.UNunit))
+        cost += unitprice
+        return cost
 
     @token_required
     def download(self):
         """导出"""
-        pass
+        data = parameter_required(('uhid', ))
+        uhid = data.get('uhid')
+        uh = UserHistory.query.filter(UserHistory.UHid == uhid, UserHistory.isdelete == false()).first_('查询记录已删除')
+        # return send_templates
+
 
     @admin_required
     def useristory(self):
