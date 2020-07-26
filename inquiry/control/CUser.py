@@ -1,3 +1,5 @@
+import json
+import random
 import re
 from datetime import datetime
 import os
@@ -10,17 +12,21 @@ from sqlalchemy import false
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from inquiry.common.default_head import GithubAvatarGenerator
+from inquiry.common.identifying_code import SendSMS
 from inquiry.config.enums import AdminLevel, AdminStatus, UserLoginTimetype, WhiteListAction, AdminAction, AdminActionS
 from inquiry.config.secret import MiniProgramAppId, MiniProgramAppSecret
-from inquiry.extensions.error_response import TokenError, WXLoginError, ParamsError, AuthorityError, NotFound
-from inquiry.extensions.interface.user_interface import token_required, admin_required, get_current_admin, is_admin
+from inquiry.config.timeformat import format_for_web_second
+from inquiry.extensions.error_response import TokenError, WXLoginError, ParamsError, AuthorityError, NotFound, TimeError
+from inquiry.extensions.interface.user_interface import token_required, admin_required, get_current_admin, is_admin, \
+    is_user, get_current_user
 from inquiry.extensions.params_validates import parameter_required
 from inquiry.extensions.register_ext import db
 from inquiry.extensions.request_handler import _get_user_agent
 from inquiry.extensions.success_response import Success
 from inquiry.extensions.token_handler import usid_to_token
 from inquiry.extensions.weixin import WeixinLogin
-from inquiry.models import User, UserLoginTime, Admin, AdminNotes, UserLevelSetting
+from inquiry.models import User, UserLoginTime, Admin, AdminNotes, UserLevelSetting, IdentifyingCode, UserHistory, \
+    Product
 
 
 class CUser(object):
@@ -66,7 +72,7 @@ class CUser(object):
 
         current_app.logger.info('get unionid is {}'.format(unionid))
         current_app.logger.info('get openid is {}'.format(openid))
-        user = self._get_exist_user((User.USopenid1 == openid,))
+        user = self._get_exist_user((User.USopenid == openid,))
         if user:
             current_app.logger.info('get exist user by openid: {}'.format(user.__dict__))
         elif unionid:
@@ -80,11 +86,12 @@ class CUser(object):
 
         user_update_dict = {'USheader': head,
                             'USname': userinfo.get('nickName'),
-                            'USopenid1': openid,
+                            'USopenid': openid,
                             'USgender': sex,
                             'USunionid': unionid
                             }
         with db.auto_commit():
+
             if user:
                 usid = user.USid
 
@@ -94,15 +101,15 @@ class CUser(object):
 
                 usid = str(uuid.uuid1())
 
-            user = User.create({
-                'USid': usid,
-                'USname': userinfo.get('nickName'),
-                'USgender': sex,
-                'USheader': head,
-                'USlevel': 1,
-                'USopenid1': openid,
-                'USunionid': unionid,
-            })
+                user = User.create({
+                    'USid': usid,
+                    'USname': userinfo.get('nickName'),
+                    'USgender': sex,
+                    'USheader': head,
+                    'USlevel': 1,
+                    'USopenid': openid,
+                    'USunionid': unionid,
+                })
             db.session.add(user)
             db.session.flush()
 
@@ -129,35 +136,23 @@ class CUser(object):
     @token_required
     def bind_phone(self):
         """小程序绑定手机号更新用户"""
-        data = parameter_required(('session_key',))
-        phone = data.get('phonenumber')
-        if not phone:
+        data = parameter_required(('ustelphone', 'identifyingcode',))
+        ustelphone = data.get('ustelphone')
+        if not ustelphone:
             raise ParamsError('为获得更优质的服务，请允许授权您的手机号码')
 
         user = self._get_exist_user((User.USid == getattr(request, 'user').id,))
         if user.UStelphone:
             raise TokenError('您已绑定过手机号码')
+        self.__check_identifyingcode(ustelphone, data.get("identifyingcode"))
 
-        session_key = data.get('session_key')
-        current_app.logger.info('手机加密数据为{}'.format(phone))
-        encrypteddata = phone.get('encryptedData')
-        iv = phone.get('iv')
+        covered_number = str(ustelphone).replace(str(ustelphone)[3:7], '*' * 4)
 
-        try:
-            encrypted_user_info = self._decrypt_encrypted_user_data(encrypteddata, session_key, iv)
-        except Exception as e:
-            current_app.logger.error('手机号解密失败: {}'.format(e))
-            raise WXLoginError()
-
-        current_app.logger.info(f'plain_text: {encrypted_user_info}')
-        phonenumber = encrypted_user_info.get('phoneNumber')
-        covered_number = str(phonenumber).replace(str(phonenumber)[3:7], '*' * 4)
-
-        if self._get_exist_user((User.USid != getattr(request, 'user').id, User.UStelphone == phonenumber)):
+        if self._get_exist_user((User.USid != getattr(request, 'user').id, User.UStelphone == ustelphone)):
             raise ParamsError(f'该手机号({covered_number})已被其他用户绑定，请联系客服处理')
 
         with db.auto_commit():
-            user.update({'UStelphone': phonenumber})
+            user.update({'UStelphone': ustelphone})
             db.session.add(user)
             res_user = user
 
@@ -283,6 +278,29 @@ class CUser(object):
                 user.USinWhiteList = False
             else:
                 raise ParamsError('参数异常')
+            db.session.add(user)
+        return Success(data='{}修改成功'.format(user.USname))
+
+    @admin_required
+    def update_user_level(self):
+        admin = get_current_admin()
+        if not admin:
+            raise AuthorityError
+        data = parameter_required(("usid", "uslevel"))
+        usid = data.get('usid')
+        uslevel = data.get("uslevel", 0)
+
+        if uslevel or uslevel == 0:
+            try:
+                uslevel = int(uslevel)
+            except:
+                raise ParamsError('uslevel 只能是整数')
+
+        user = User.query.filter(User.USid == usid, User.isdelete == false()).first()
+        if not user:
+            raise ParamsError('用户不在本系统')
+        with db.auto_commit():
+            user.USlevel = uslevel
             db.session.add(user)
         return Success(data='{}修改成功'.format(user.USname))
 
@@ -496,7 +514,8 @@ class CUser(object):
     @admin_required
     def get_userlevelsetting(self):
         admin = get_current_admin()
-        usllist = UserLevelSetting.query.filter(UserLevelSetting.isdelete == false()).all()
+        usllist = UserLevelSetting.query.filter(UserLevelSetting.isdelete == false()).order_by(
+            UserLevelSetting.ULSlevel.desc()).all()
 
         return Success('获取成功', data=usllist)
 
@@ -504,7 +523,7 @@ class CUser(object):
     def set_userlevelsetting(self):
         admin = get_current_admin()
         data = parameter_required()
-        ulsid, ulslevel, ulscoeffcient = data.get('ulsid'), data.get('ulslevel'), data.get('ulscoeffcient')
+        ulsid, ulslevel, ulscoefficient = data.get('ulsid'), data.get('ulslevel'), data.get('ulscoefficient')
         ulsdict = {}
         if ulslevel or ulslevel == 0:
             try:
@@ -512,17 +531,17 @@ class CUser(object):
             except:
                 raise ParamsError('等级只能是整数')
             ulsdict['ULSlevel'] = ulslevel
-        if ulscoeffcient or ulscoeffcient == 0:
+        if ulscoefficient or ulscoefficient == 0:
             try:
-                ulscoeffcient = Decimal(ulscoeffcient)
+                ulscoefficient = Decimal(ulscoefficient)
             except:
                 raise ParamsError('系数只能是数字')
-            ulsdict['ULScoefficient'] = ulscoeffcient
+            ulsdict['ULScoefficient'] = ulscoefficient
         with db.auto_commit():
             if not ulsid:
                 if not ulslevel:
                     raise ParamsError('等级参数缺失')
-                if not ulscoeffcient:
+                if not ulscoefficient:
                     raise ParamsError('系数缺失')
                 ulsdict['ULSid'] = str(uuid.uuid1())
                 # 同级校验
@@ -543,3 +562,128 @@ class CUser(object):
                     msg = '更新成功'
             db.session.add(ulsinstance)
         return Success(msg, data={'ulsid': ulsinstance.ULSid})
+
+    def get_inforcode(self):
+        """发送/校验验证码"""
+        args = request.args.to_dict()
+        # print('get inforcode args: {0}'.format(args))
+        Utel = args.get('ustelphone')
+        if not Utel or not re.match(r'^1[1-9][0-9]{9}$', str(Utel)):
+            raise ParamsError('请输入正确的手机号码')
+        if is_user():
+            user = User.query.filter_by_(USid=request.user.id).first()
+            if (user and user.UStelphone) and str(Utel) != user.UStelphone:
+                raise ParamsError('请使用已绑定手机号 {} 获取验证码'
+                                  ''.format(str(user.UStelphone).replace(str(user.UStelphone)[3:7], '*' * 4)))
+        # 拼接验证码字符串（6位）
+        code = ""
+        while len(code) < 6:
+            item = random.randint(1, 9)
+            code = code + str(item)
+
+        # 获取当前时间，与上一次获取的时间进行比较，小于60秒的获取直接报错
+
+        time_time = datetime.now()
+
+        # 根据电话号码获取时间
+        time_up = IdentifyingCode.query.filter(
+            IdentifyingCode.ICtelphone == Utel, IdentifyingCode.isdelete == False).order_by(
+            IdentifyingCode.createtime.desc()).first_()
+        # print("this is time up %s", time_up)
+
+        if time_up:
+            delta = time_time - time_up.createtime
+            if delta.seconds < 60:
+                raise TimeError("验证码已发送")
+
+        with db.auto_commit():
+            newidcode = IdentifyingCode.create({
+                "ICtelphone": Utel,
+                "ICcode": code,
+                "ICid": str(uuid.uuid1())
+            })
+            db.session.add(newidcode)
+
+        params = {"code": code}
+        response_send_message = SendSMS(Utel, params)
+
+        if not response_send_message:
+            raise SystemError('发送验证码失败')
+
+        response = {
+            'ustelphone': Utel
+        }
+        return Success('获取验证码成功', data=response)
+
+    def __check_identifyingcode(self, ustelphone, identifyingcode):
+        """验证码校验"""
+        # identifyingcode = str(data.get('identifyingcode'))
+        if not ustelphone or not identifyingcode:
+            raise ParamsError("验证码/手机号缺失")
+        idcode = IdentifyingCode.query.filter(
+            IdentifyingCode.ICtelphone == ustelphone, IdentifyingCode.isdelete == False).order_by(
+            IdentifyingCode.createtime.desc()).first_()
+
+        if not idcode or str(idcode.ICcode) != identifyingcode:
+            current_app.logger.info('get identifyingcode ={0} get idcode = {1}'.format(identifyingcode, idcode.ICcode))
+            raise ParamsError('验证码有误')
+
+        timenow = datetime.now()
+        if (timenow - idcode.createtime).seconds > 600:
+            current_app.logger.info('get timenow ={0}, sendtime = {1}'.format(timenow, idcode.createtime))
+            raise ParamsError('验证码已经过期')
+        return True
+
+    @token_required
+    def useristory(self):
+        """用户查询记录"""
+        data = parameter_required()
+        usname, ustelphone, starttime, endtime = data.get('usname'), data.get('ustelphone'), data.get(
+            'starttime'), data.get('endtime')
+
+        filter_args = []
+        if is_user():
+            user = get_current_user()
+            filter_args.append(User.USid == user.USid)
+        if usname:
+            filter_args.append(User.USname.ilike("%{}%".format(usname)))
+        if ustelphone:
+            filter_args.append((User.UStelphone.ilike("%{}%".format(ustelphone))))
+
+        starttime = self._check_time(starttime)
+        endtime = self._check_time(endtime)
+        if starttime:
+            filter_args.append(UserHistory.createtime >= starttime)
+        if endtime:
+            filter_args.append(UserHistory.createtime <= endtime)
+
+        uhlist = UserHistory.query.join(User, User.USid == UserHistory.USid).filter(*filter_args).order_by(
+            UserHistory.createtime.desc()).all_with_page()
+        productdict = {}
+        product_list = Product.query.join(UserHistory, UserHistory.PRid == Product.PRid).filter(
+            Product.isdelete == false(), UserHistory.isdelete == false()).all()
+        for product in product_list:
+            productdict[product.PRid] = product.PRname
+
+        user_list = User.query.join(UserHistory, UserHistory.USid == User.USid).filter(
+            User.isdelete == false(), UserHistory.isdelete == false()).all()
+        user_dict = {user_item.USid: user_item for user_item in user_list}
+        for uh in uhlist:
+            uh.add("createtime")
+            uh.fill('prname', productdict.get(uh.PRid))
+            user_item = user_dict.get(uh.USid)
+            uh.fill('usname', user_item.USname)
+            uh.fill('ustelphone', user_item.UStelphone)
+            uh.fill('uhparams', json.loads(uh.UHparams))
+        return Success("获取查询记录成功", data=uhlist)
+
+    def _check_time(self, check_time):
+        if not check_time:
+            return
+        # 日期校验
+        if not isinstance(check_time, datetime):
+            try:
+                check_time = datetime.strptime(str(check_time), format_for_web_second)
+            except:
+                raise ParamsError('日期格式不对，具体格式为{}'.format(format_for_web_second))
+        return check_time
