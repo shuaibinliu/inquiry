@@ -50,7 +50,8 @@ class UserHistory(Base):
     UHparams = Column(Text, comment='查询参数')
     PRid = Column(String(64), comment="产品ID")
     UHprice = Column(DECIMAL(precision=28, scale=2), comment='计算得出价格')
-    UHfile = Column(Text, comment='生成文件路径')
+    UHfile = Column(Text, comment='生成文件名')
+    UHabs = Column(Text, comment='生成文件路径')
 
 
 class Product(Base):
@@ -207,3 +208,11 @@ class UserAccessApi(Base):
     PhoneModel = Column(String(16), comment='手机型号')
     WechatVersion = Column(String(16), comment='微信版本')
     NetType = Column(String(10), comment='用户网络')
+
+
+class IdentifyingCode(Base):
+    """验证码"""
+    __tablename__ = "identifyingcode"
+    ICid = Column(String(64), primary_key=True)
+    ICtelphone = Column(String(14), nullable=False)  # 获取验证码的手机号
+    ICcode = Column(String(8), nullable=False)  # 获取到的验证码
