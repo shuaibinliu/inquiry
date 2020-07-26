@@ -13,6 +13,7 @@ class AProduct(Resource):
             "list_pp": self.cproduct.list_pp,
             "list_uc": self.cproduct.list_uc,
             "get_uc": self.cproduct.get_uc,
+            "download": self.cproduct.download,
             "get": self.cproduct.get
         }
         return apis
