@@ -675,6 +675,7 @@ class CUser(object):
             uh.fill('usname', user_item.USname)
             uh.fill('ustelphone', user_item.UStelphone)
             uh.fill('uhparams', json.loads(uh.UHparams))
+            uh.fill('uhcost', json.loads(uh.UHcost or '[]'))
         return Success("获取查询记录成功", data=uhlist)
 
     def _check_time(self, check_time):

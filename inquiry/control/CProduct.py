@@ -1,11 +1,19 @@
 import json
+import os
+import random
+import time
 import uuid
+from datetime import datetime
 from decimal import Decimal
 
-from flask import request
+import tablib
+from flask import request, send_from_directory
 from sqlalchemy import false, or_
 
+from inquiry.extensions.base_jsonencoder import JSONEncoder
 from inquiry.config.enums import UnitType, ProductParamsType
+
+from inquiry.config.secret import BASEDIR
 from inquiry.extensions.error_response import ParamsError, AuthorityError
 from inquiry.extensions.interface.user_interface import admin_required, get_current_admin, is_admin, get_current_user, \
     is_user, token_required
@@ -119,9 +127,9 @@ class CProduct(object):
         pc_dict = {}
         if pcname:
             pc_dict['PCname'] = pcname
-        if pcurl:
-            pc_dict['PCurl'] = pcurl
-        if pcurl:
+        # if pcurl:
+        pc_dict['PCurl'] = pcurl
+        if pcicon:
             pc_dict['PCicon'] = pcicon
         if pcsort:
             try:
@@ -147,7 +155,7 @@ class CProduct(object):
                     pc.update({'isdelete': True})
                     msg = '删除成功'
                 else:
-                    pc.update(pc_dict)
+                    pc.update(pc_dict, null='not ignore')
                     msg = '编辑成功'
 
             db.session.add(pc)
@@ -166,7 +174,7 @@ class CProduct(object):
         data = parameter_required()
         ppid, prid, ppname, pprequired, pptype, ppremarks, ppunit, ppsort, ppvlist = data.get(
             'ppid'), data.get('prid'), data.get('ppname'), data.get('pprequired'), data.get(
-            'pptype'), data.get('ppremarks'), data.get('ppunit'), data.get('ppsort'), data.get('ppvlist')
+            'pptype'), data.get('ppremarks'), data.get('ppunit'), data.get('ppsort'), data.get('ppvlist', [])
         pp_dict = {}
         if ppname:
             pp_dict['PPname'] = ppname
@@ -187,8 +195,8 @@ class CProduct(object):
             except:
                 raise ParamsError('类型有误')
             pp_dict['PPtype'] = pptype
-        if ppunit:
-            pp_dict['PPunit'] = ppunit
+        # if ppunit:
+        pp_dict['PPunit'] = ppunit
         if ppremarks:
             pp_dict['PPremarks'] = ppremarks
 
@@ -211,11 +219,11 @@ class CProduct(object):
                     pp.update({'isdelete': True})
                     msg = '删除成功'
                 else:
-                    pp.update(pp_dict)
+                    pp.update(pp_dict, null='not ignore')
                     msg = '编辑成功'
 
             db.session.add(pp)
-            if ppvlist:
+            if isinstance(ppvlist, list):
                 # ProductParamsValue.query.filter(ProductParams.PPid == pp.PPid).delete_()
                 ppvidlist = []
                 instance_list = []
@@ -240,26 +248,46 @@ class CProduct(object):
                     else:
                         ppvdict.setdefault('PPVid', str(uuid.uuid1()))
                         ppv_instance = ProductParamsValue.create(ppvdict)
-                    if ppv.get('frontid') and ppv.get('frontid') != pp.PPid:
+                    frontids = ppv.get('frontid', [])
+                    if isinstance(frontids, list):
+                        fpids = []
+                        for frontid in frontids:
+                            front = ProductParams.query.filter(
+                                ProductParams.PPid == frontid).first_("后续参数已删除")
+                            fp_instance = FrontParams.query.filter(
+                                FrontParams.PPid == front.PPid,
+                                FrontParams.PPVid == ppv_instance.PPVid, FrontParams.isdelete == false()).first()
+                            if not fp_instance:
+                                fp_instance = FrontParams.create({
+                                    "FPid": str(uuid.uuid1()),
+                                    "PPid": front.PPid,
+                                    "PPVid": ppv_instance.PPVid,
 
-                        front = ProductParams.query.filter(
-                            ProductParams.PPid == ppv.get('frontid')).first_("后续参数已删除")
-                        fp_instance = FrontParams.query.filter(
-                            FrontParams.PPid == front.PPid,
-                            FrontParams.PPVid == ppv_instance.PPVid, FrontParams.isdelete == false()).first()
-                        if not fp_instance:
-                            fp_instance = FrontParams.create({
-                                "FPid": str(uuid.uuid1()),
-                                "PPid": front.PPid,
-                                "PPVid": ppv_instance.PPVid,
+                                })
+                                instance_list.append(fp_instance)
+                            fpids.append(fp_instance.FPid)
+                            front.PRid = ""
+                            instance_list.append(front)
 
-                            })
-                            instance_list.append(fp_instance)
-                        front.PRid = ""
-                        instance_list.append(front)
+                        unused_fp = FrontParams.query.filter(FrontParams.PPVid == ppv_instance.PPVid,
+                            FrontParams.FPid.notin_(fpids), FrontParams.isdelete == false()).all()
+                        # 删除无用绑定
+                        for fp in unused_fp:
+                            unused_pp = ProductParams.query.filter(
+                                ProductParams.PPid == fp.PPid,
+                                ProductParams.isdelete == false()).first()
+                            if unused_pp:
+                                unused_pp.PRid = pp.PRid
+                                instance_list.append(unused_pp)
+                            fp.isdelete = True
+                            instance_list.append(fp)
+
                     ppvidlist.append(ppv_instance.PPVid)
                     instance_list.append(ppv_instance)
                 db.session.add_all(instance_list)
+                unused_ppv = ProductParamsValue.query.filter(
+                    ProductParamsValue.PPid == pp.PPid,
+                    ProductParamsValue.PPVid.notin_(ppvidlist)).all()
                 ProductParamsValue.query.filter(
                     ProductParamsValue.PPid == pp.PPid,
                     ProductParamsValue.PPVid.notin_(ppvidlist)).delete_(synchronize_session=False)
@@ -296,7 +324,8 @@ class CProduct(object):
             itemlist = []
             fps = FrontParams.query.filter(FrontParams.PPVid == pv.PPVid, FrontParams.isdelete == false()).all()
             for fp in fps:
-                fpp = ProductParams.query.filter(ProductParams.PPid == fp.PPid, ProductParams.isdelete == false()).first()
+                fpp = ProductParams.query.filter(ProductParams.PPid == fp.PPid,
+                                                 ProductParams.isdelete == false()).first()
                 if not fpp:
                     continue
                 self._fill_ppv(fpp)
@@ -317,12 +346,11 @@ class CProduct(object):
     @admin_required
     def get_uc(self):
         admin = get_current_admin()
-        data = parameter_required(('ucid'),)
+        data = parameter_required(('ucid'), )
         uc = UnitCategory.query.filter(
-            UnitCategory.UCid ==data.get('ucid'), UnitCategory.isdelete == false()).first_('分类已删除')
+            UnitCategory.UCid == data.get('ucid'), UnitCategory.isdelete == false()).first_('分类已删除')
         self._fill_uc(uc)
         return Success('获取成功', data=uc)
-
 
     def _fill_uc(self, uc):
         unlist = Unit.query.filter(Unit.isdelete == false(), Unit.UCid == uc.UCid).all()
@@ -371,9 +399,9 @@ class CProduct(object):
     def set_un(self):
         admin = get_current_admin()
         data = parameter_required()
-        unid, ucid, unname, prid, ucrequired, ununit, ununitprice, untype, unlimit, pcid = data.get('unid'), data.get(
+        unid, ucid, unname, prid, ucrequired, ununit, ununitprice, untype, unlimit, pcid, ppvid = data.get('unid'), data.get(
             'ucid'), data.get('unname'), data.get('prid'), data.get('ucrequired'), data.get('ununit'), data.get(
-            'ununitprice'), data.get('unlimit'), data.get('untype'), data.get('pcid')
+            'ununitprice'), data.get('untype'), data.get('unlimit'), data.get('pcid'), data.get('ppvid')
         undict = {}
         if unname:
             undict['UNname'] = unname
@@ -382,14 +410,18 @@ class CProduct(object):
                 UnitCategory.UCid == ucid, UnitCategory.isdelete == false()).first_('分类已删除')
             undict['UCid'] = uc.UCid
         if prid:
-            product = Product.query.filter(Product.PRid== prid, Product.isdelete == false()).first_('商品已删除')
-            undict['PRid'] = product.PRid
+            product = Product.query.filter(Product.PRid == prid, Product.isdelete == false()).first_('商品已删除')
+        undict['PRid'] = prid
         if pcid:
             pc = ProductCategory.query.filter(
                 ProductCategory.PCid == pcid, ProductCategory.isdelete == false()).first_("商品分类已删除")
-            ununit['PCid'] = pc.PCid
+        undict['PCid'] = pcid
         if ununit:
             undict['UNunit'] = ununit
+        if ppvid:
+            ppv = ProductParamsValue.query.filter(
+                ProductParamsValue.PPVid == ppvid, ProductParamsValue.isdelete == false()).first_('参数值已删除')
+        undict['PPVid'] = ppvid
         if ununitprice:
             try:
                 ununitprice = Decimal(ununitprice)
@@ -529,38 +561,70 @@ class CProduct(object):
         ).order_by(Unit.UNtype.asc(), Unit.UNlimit.asc()).all()
         mount = Decimal(0)
         for un in unlist:
-            mount = self._add_price(cost, cost_item_list, un, coefficient, cost)
+            mount += self._add_price(cost, cost_item_list, un, coefficient, cost)
+        cost_item_list.append(('合计', '', '', '', mount))
         # 建立表格 todo
-        filepath = ''
+        filepath, filename = self._create_table(cost_item_list)
         # 创建查询记录
         with db.auto_commit():
             uh = UserHistory.create({
                 "UHid": str(uuid.uuid1()),
                 "USid": user.USid,
-                "UHparams": json.dumps(params),
+                "UHparams": json.dumps(params, cls=JSONEncoder),
                 "PRid": prid,
                 "UHprice": mount,
-                "UHfile": filepath
+                "UHcost": json.dumps(cost_item_list, cls=JSONEncoder),
+                "UHfile": filename,
+                "UHabs": filepath,
             })
             db.session.add(uh)
         return Success('询价成功', data={"mount": mount, "uhid": uh.UHid})
 
     def _add_price(self, cost, cost_item_list, un, coefficient, param=1):
-        unitprice = Decimal(un.UNunitPrice) * coefficient * param
-        cost_item_list.append("{}: {} 元 {}".format(un.UNname, unitprice, un.UNunit))
+        unitprice = Decimal(un.UNunitPrice) * coefficient
+        # cost_item_list.append("{}: {} 元 {}".format(un.UNname, unitprice, un.UNunit))
+        cost_mount = unitprice * param
+        uc = UnitCategory.query.filter(UnitCategory.UCid == un.UCid, UnitCategory.isdelete == false()).first()
+        ucname = uc.UCname if uc else ""
+        cost_item_list.append((ucname, un.UNname, unitprice, un.UNunit, cost_mount))
         cost += unitprice
         return cost
 
     @token_required
     def download(self):
         """导出"""
-        data = parameter_required(('uhid', ))
+        data = parameter_required(('uhid',))
         uhid = data.get('uhid')
         uh = UserHistory.query.filter(UserHistory.UHid == uhid, UserHistory.isdelete == false()).first_('查询记录已删除')
+
+        if is_user():
+            uhcost = json.loads(uh.UHcost)
+            return Success('获取成功', data=uhcost)
+
+        filepath, filename = uh.UHabs, uh.UHfile,
+        if not os.path.isfile(os.path.join(filepath, filename)):
+            raise ParamsError('报表未能成功导出')
+        return send_from_directory(filepath, filename, as_attachment=True, cache_timeout=-1)
         # return send_templates
 
+    def _create_table(self, rows):
+        headers = ['灯箱部件', '物料名称', '单位', '单价', '合计']
+        data = tablib.Dataset(*rows, headers=headers, title='询价导出页面')
+        now = datetime.now()
+        aletive_dir = 'img/xls/{year}/{month}/{day}'.format(year=now.year, month=now.month, day=now.day)
+        abs_dir = os.path.join(BASEDIR, 'img', 'xls', str(now.year), str(now.month), str(now.day))
+        xls_name = self._generic_omno() + '.xls'
+        aletive_file = '{dir}/{xls_name}'.format(dir=aletive_dir, xls_name=xls_name)
+        abs_file = os.path.abspath(os.path.join(BASEDIR, aletive_file))
+        if not os.path.isdir(abs_dir):
+            os.makedirs(abs_dir)
+        with open(abs_file, 'wb') as f:
+            f.write(data.xls)
+        return abs_dir, xls_name
+        # return send_from_directory(abs_dir, xls_name, as_attachment=True, cache_timeout=-1)
 
-    @admin_required
-    def useristory(self):
-        """用户查询记录"""
-        pass
+    @staticmethod
+    def _generic_omno():
+        """生成订单号"""
+        return str(time.strftime('%Y%m%d%H%M%S', time.localtime(time.time()))) + \
+               str(time.time()).replace('.', '')[-7:] + str(random.randint(1000, 9999))

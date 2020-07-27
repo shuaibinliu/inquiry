@@ -50,6 +50,7 @@ class UserHistory(Base):
     UHparams = Column(Text, comment='查询参数')
     PRid = Column(String(64), comment="产品ID")
     UHprice = Column(DECIMAL(precision=28, scale=2), comment='计算得出价格')
+    UHcost = Column(Text, comment='物料明细')
     UHfile = Column(Text, comment='生成文件名')
     UHabs = Column(Text, comment='生成文件路径')
 
