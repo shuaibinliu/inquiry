@@ -109,8 +109,8 @@ class GithubAvatarGenerator:
         current_app.logger.info(new_path)
         cv2.imwrite(new_path, img)
         data = '/img/defaulthead/{}/{}/{}/{}'.format(year, month, day, filepath + '.png')
-        return data, new_path
-
+        # return data, new_path
+        return  data
 
 if __name__ == '__main__':
     gen = GithubAvatarGenerator()

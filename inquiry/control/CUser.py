@@ -81,6 +81,7 @@ class CUser(object):
                 current_app.logger.info('get exist user by unionid: {}'.format(user.__dict__))
 
         head = self._get_local_head(userinfo.get("avatarUrl"), openid)
+        current_app.logger.info('get head = {}'.format(head))
         sex = userinfo.get('gender')
         sex = int(sex) if str(sex) in '12' else 0
 

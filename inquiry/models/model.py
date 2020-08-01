@@ -135,7 +135,8 @@ class Unit(Base):
     UNunitPrice = Column(DECIMAL(precision=28, scale=2), comment='单价')
     UNname = Column(Text, comment='参数名')
     UNtype = Column(Integer, default=10, comment='10 宽 20 高 30 周长 40 面积 50 ')
-    UNlimit = Column(DECIMAL(precision=28, scale=2), comment='限制条件')
+    UNlimit = Column(DECIMAL(precision=28, scale=2), comment='最大值')
+    UNlimitMin = Column(DECIMAL(precision=28, scale=2), comment='最小值')
     PPVid = Column(String(64), comment='参数限制')
 
 

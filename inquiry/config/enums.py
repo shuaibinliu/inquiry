@@ -734,6 +734,7 @@ class UnitType(Enum):
     area = 80, '面积'
     cost = 90, '成本'
     minner = 100, '宽高较小值'
+    mount = 110, '总额'
 
 
 class ProductParamsType(Enum):

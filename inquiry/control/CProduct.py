@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import random
 import time
@@ -7,8 +8,8 @@ from datetime import datetime
 from decimal import Decimal
 
 import tablib
-from flask import request, send_from_directory
-from sqlalchemy import false, or_
+from flask import request, send_from_directory, current_app
+from sqlalchemy import false, or_, and_
 
 from inquiry.extensions.base_jsonencoder import JSONEncoder
 from inquiry.config.enums import UnitType, ProductParamsType
@@ -270,7 +271,8 @@ class CProduct(object):
                             instance_list.append(front)
 
                         unused_fp = FrontParams.query.filter(FrontParams.PPVid == ppv_instance.PPVid,
-                            FrontParams.FPid.notin_(fpids), FrontParams.isdelete == false()).all()
+                                                             FrontParams.FPid.notin_(fpids),
+                                                             FrontParams.isdelete == false()).all()
                         # 删除无用绑定
                         for fp in unused_fp:
                             unused_pp = ProductParams.query.filter(
@@ -353,13 +355,31 @@ class CProduct(object):
         return Success('获取成功', data=uc)
 
     def _fill_uc(self, uc):
-        unlist = Unit.query.filter(Unit.isdelete == false(), Unit.UCid == uc.UCid).all()
+        unlist = Unit.query.filter(Unit.isdelete == false(), Unit.UCid == uc.UCid).order_by(
+            Unit.createtime.desc()).all()
         for un in unlist:
             if un.PRid:
                 product = Product.query.filter(Product.isdelete == false(), Product.PRid == un.PRid).first()
                 if not product:
                     continue
                 un.fill('prname', product.PRname)
+            if un.PCid:
+                pc = ProductCategory.query.filter(
+                    ProductCategory.isdelete == false(), ProductCategory.PCid == un.PCid).first()
+                if not pc:
+                    continue
+                un.fill('pcname', pc.PCname)
+            if un.PPVid:
+                ppv = ProductParamsValue.query.filter(
+                    ProductParamsValue.isdelete == false(), ProductParamsValue.PPVid == un.PPVid).first()
+                if not ppv:
+                    continue
+                pp = ProductParams.query.filter(
+                    ProductParams.isdelete == false(), ProductParams.PPid == ppv.PPid).first()
+                if not pp:
+                    continue
+
+                un.fill('ppname', "{}-{}".format(pp.PPname, ppv.PPVvalue))
         uc.fill('unlist', unlist)
 
     @admin_required
@@ -399,16 +419,17 @@ class CProduct(object):
     def set_un(self):
         admin = get_current_admin()
         data = parameter_required()
-        unid, ucid, unname, prid, ucrequired, ununit, ununitprice, untype, unlimit, pcid, ppvid = data.get('unid'), data.get(
-            'ucid'), data.get('unname'), data.get('prid'), data.get('ucrequired'), data.get('ununit'), data.get(
-            'ununitprice'), data.get('untype'), data.get('unlimit'), data.get('pcid'), data.get('ppvid')
+        unid, ucid, unname, prid, ucrequired, ununit, ununitprice, untype, unlimit, unlimitmin, pcid, ppvid = data.get(
+            'unid'), data.get('ucid'), data.get('unname'), data.get('prid'), data.get('ucrequired'), data.get(
+            'ununit'), data.get('ununitprice'), data.get('untype'), data.get(
+            'unlimit'), data.get('unlimitmin'), data.get('pcid'), data.get('ppvid')
         undict = {}
         if unname:
             undict['UNname'] = unname
         if ucid:
             uc = UnitCategory.query.filter(
                 UnitCategory.UCid == ucid, UnitCategory.isdelete == false()).first_('分类已删除')
-            undict['UCid'] = uc.UCid
+        undict['UCid'] = ucid
         if prid:
             product = Product.query.filter(Product.PRid == prid, Product.isdelete == false()).first_('商品已删除')
         undict['PRid'] = prid
@@ -429,18 +450,23 @@ class CProduct(object):
                 raise ParamsError('单价只能是数字')
             undict['UNunitPrice'] = ununitprice
         if untype:
-            # todo  enum
             try:
                 untype = UnitType(int(untype)).value
             except:
                 raise ParamsError('参数类型有误')
-            undict['UNtype'] = untype
+        undict['UNtype'] = untype or 0
         if unlimit:
             try:
                 unlimit = Decimal(unlimit)
             except:
                 raise ParamsError('最大值只能是数字')
-            undict['UNlimit'] = unlimit
+        undict['UNlimit'] = unlimit or 0
+        if unlimitmin:
+            try:
+                unlimitmin = Decimal(unlimitmin)
+            except:
+                raise ParamsError('最小值只能是数字')
+            undict['UNlimitMin'] = unlimitmin or 0
         undict['UCrequired'] = bool(ucrequired)
 
         with db.auto_commit():
@@ -462,7 +488,7 @@ class CProduct(object):
                     uninstance.update({'isdelete': True})
                     msg = '删除成功'
                 else:
-                    uninstance.update(undict)
+                    uninstance.update(undict, null='not ignore')
                     msg = '更新成功'
             db.session.add(uninstance)
         return Success(message=msg, data={'ucid': uninstance.UNid})
@@ -512,59 +538,85 @@ class CProduct(object):
             UserLevelSetting.ULSlevel == user.USlevel, UserLevelSetting.isdelete == false()).first()
         coefficient = Decimal(ul.ULScoefficient if ul else 1)
         # 先计算固定成本
-        filter_proudct = [or_(Unit.PRid == product.PRid, Unit.PCid == product.PCid), Unit.isdelete == false()]
+        filter_proudct = [or_(and_(Unit.PRid == product.PRid, ), Unit.PRid == None),
+                          Unit.PCid == product.PCid,
+                          Unit.isdelete == false(), UnitCategory.isdelete == false()]
         # 成本
         cost = Decimal('0')
         cost_item_list = []
-        unlist = Unit.query.filter(*filter_proudct, Unit.UCrequired == True).all()
+        unlist = Unit.query.join(UnitCategory, UnitCategory.UCid == Unit.UCid).filter(*filter_proudct,
+                                                                                      Unit.UCrequired == True).all()
         for un in unlist:
-            cost = self._add_price(cost, cost_item_list, un, coefficient)
+            cost += self._add_price(cost, cost_item_list, un, coefficient)
         # 计算除人工费的其他费用
-        unlist = Unit.query.filter(
+        unlist = Unit.query.join(UnitCategory, UnitCategory.UCid == Unit.UCid).filter(
             *filter_proudct, Unit.UCrequired == False, Unit.UNtype != UnitType.cost.value,
-            or_(Unit.PPVid == None, Unit.PPVid.in_(ppvidlist))
+                             Unit.UNtype != UnitType.mount.value, or_(Unit.PPVid == None, Unit.PPVid.in_(ppvidlist))
         ).order_by(Unit.UNtype.asc(), Unit.UNlimit.asc()).all()
 
         for un in unlist:
             if un.UNtype == UnitType.wide.value:
-                if wide <= un.UNlimit:
-                    cost = self._add_price(cost, cost_item_list, un, coefficient, wide)
+                if self._check_limit(wide, un):
+                    cost += self._add_price(cost, cost_item_list, un, coefficient, wide)
                 continue
             elif un.UNtype == UnitType.high.value:
-                if high <= un.UNlimit:
-                    cost = self._add_price(cost, cost_item_list, un, coefficient, high)
+                if self._check_limit(high, un):
+                    cost += self._add_price(cost, cost_item_list, un, coefficient, high)
                 continue
             elif un.UNtype == UnitType.pillarshigh.value:
-                if pillarshigh <= un.UNlimit:
-                    cost = self._add_price(cost, cost_item_list, un, coefficient, pillarshigh)
+                if self._check_limit(pillarshigh, un):
+                    cost += self._add_price(cost, cost_item_list, un, coefficient, pillarshigh)
                 continue
             elif un.UNtype == UnitType.perimeter.value:
-                if perimeter <= un.UNlimit:
-                    cost = self._add_price(cost, cost_item_list, un, coefficient, perimeter)
+                if self._check_limit(perimeter, un):
+                    cost += self._add_price(cost, cost_item_list, un, coefficient, perimeter)
                 continue
             elif un.UNtype == UnitType.area.value:
-                if area <= un.UNlimit:
-                    cost = self._add_price(cost, cost_item_list, un, coefficient, area)
+                if self._check_limit(area, un):
+                    cost += self._add_price(cost, cost_item_list, un, coefficient, area)
                 continue
             elif un.UNtype == UnitType.minner.value:
-                if minner <= un.UNlimit:
-                    cost = self._add_price(cost, cost_item_list, un, coefficient, minner)
+                if self._check_limit(minner, un):
+                    cost += self._add_price(cost, cost_item_list, un, coefficient, minner)
                 continue
             else:
-                cost = self._add_price(cost, cost_item_list, un, coefficient)
+                cost += self._add_price(cost, cost_item_list, un, coefficient)
                 continue
-
+        # 计算电源费用 todo 限制产品
+        cost += self._caculate_power(ppvidlist, wide, high, cost_item_list, coefficient)
         # 计算人工费等依赖成本的费用
-        unlist = Unit.query.filter(
+        unlist = Unit.query.join(UnitCategory, UnitCategory.UCid == Unit.UCid).filter(
             *filter_proudct, Unit.UCrequired == False, Unit.UNtype == UnitType.cost.value,
             or_(Unit.PPVid == None, Unit.PPVid.in_(ppvidlist))
         ).order_by(Unit.UNtype.asc(), Unit.UNlimit.asc()).all()
-        mount = Decimal(0)
+        # mount = Decimal(0)
+        ex_cost = Decimal(0)
+
+        current_app.logger.info('get cost = {}'.format(cost))
         for un in unlist:
-            mount += self._add_price(cost, cost_item_list, un, coefficient, cost)
-        cost_item_list.append(('合计', '', '', '', mount))
+            ex_cost += self._add_ex_cost(cost, cost_item_list, un, coefficient)
+        current_app.logger.info('get ex cost = {}'.format(ex_cost))
+        mount = cost + ex_cost
+        current_app.logger.info('get mount = {}'.format(mount))
+
+        # 计算 依赖总额的费用
+        unlist = Unit.query.join(UnitCategory, UnitCategory.UCid == Unit.UCid).filter(
+            *filter_proudct, Unit.UCrequired == False, Unit.UNtype == UnitType.mount.value,
+            or_(Unit.PPVid == None, Unit.PPVid.in_(ppvidlist))
+        ).order_by(Unit.UNtype.asc(), Unit.UNlimit.asc()).all()
+
+        final_mount = mount
+        for un in unlist:
+            final_mount += self._add_ex_cost(mount, cost_item_list, un, coefficient)
+
+        current_app.logger.info('get final_mount = {}'.format(final_mount))
+
+        cost_item_list.append(('合计', '', '', '', final_mount))
         # 建立表格 todo
         filepath, filename = self._create_table(cost_item_list)
+        cost_dict_list = [{'ucname': item[0], 'unname': item[1],
+                           'ununit': item[2], 'ununitprice': item[3], 'mount': item[4]} for item in cost_item_list]
+
         # 创建查询记录
         with db.auto_commit():
             uh = UserHistory.create({
@@ -572,8 +624,8 @@ class CProduct(object):
                 "USid": user.USid,
                 "UHparams": json.dumps(params, cls=JSONEncoder),
                 "PRid": prid,
-                "UHprice": mount,
-                "UHcost": json.dumps(cost_item_list, cls=JSONEncoder),
+                "UHprice": final_mount,
+                "UHcost": json.dumps(cost_dict_list, cls=JSONEncoder),
                 "UHfile": filename,
                 "UHabs": filepath,
             })
@@ -583,12 +635,22 @@ class CProduct(object):
     def _add_price(self, cost, cost_item_list, un, coefficient, param=1):
         unitprice = Decimal(un.UNunitPrice) * coefficient
         # cost_item_list.append("{}: {} 元 {}".format(un.UNname, unitprice, un.UNunit))
-        cost_mount = unitprice * param
+        cost_mount = (unitprice * param).quantize(Decimal("0.00"))
         uc = UnitCategory.query.filter(UnitCategory.UCid == un.UCid, UnitCategory.isdelete == false()).first()
         ucname = uc.UCname if uc else ""
-        cost_item_list.append((ucname, un.UNname, unitprice, un.UNunit, cost_mount))
-        cost += unitprice
-        return cost
+        cost_item_list.append((ucname, un.UNname, un.UNunit, unitprice, cost_mount))
+        # cost += cost_mount
+        return cost_mount
+
+    def _add_ex_cost(self, cost, cost_item_list, un, coefficient):
+        unitprice = Decimal(un.UNunitPrice) * coefficient
+        # cost_item_list.append("{}: {} 元 {}".format(un.UNname, unitprice, un.UNunit))
+        cost_mount = (unitprice * cost).quantize(Decimal("0.00"))
+        uc = UnitCategory.query.filter(UnitCategory.UCid == un.UCid, UnitCategory.isdelete == false()).first()
+        ucname = uc.UCname if uc else ""
+        cost_item_list.append((ucname, un.UNname, "", "", cost_mount))
+        # cost += cost_mount
+        return cost_mount
 
     @token_required
     def download(self):
@@ -628,3 +690,99 @@ class CProduct(object):
         """生成订单号"""
         return str(time.strftime('%Y%m%d%H%M%S', time.localtime(time.time()))) + \
                str(time.time()).replace('.', '')[-7:] + str(random.randint(1000, 9999))
+
+    def _check_limit(self, params, un):
+        return ((un.UNlimit and params <= un.UNlimit) or not un.UNlimit) and (
+                (un.UNlimitMin and params > un.UNlimitMin) or not un.UNlimitMin)
+
+    def _caculate_power(self, ppvidlist, wide, high, cost_item_list, coefficient):
+        # gunlun_list = [
+        #     '0c3f8a78-d171-11ea-877a-fa163e8df331',
+        #     '97db244e-d170-11ea-b88d-fa163e8df331',
+        #     'b700c132-d169-11ea-b88d-fa163e8df331',
+        #     'e7300f40-d171-11ea-877a-fa163e8df331'
+        # ]
+        # 固定边长
+        loap_len = Decimal(1.2)
+        first_num_gunlun = Decimal(1.2)
+        first_num_no_gunlun = Decimal(1.2)
+        second_num_gunlun = Decimal(2)
+        second_num_no_gunlun = Decimal(5)
+        view_wide = wide - loap_len
+        view_high = high - loap_len
+
+        current_app.logger.info('is view_wide {}'.format(view_wide))
+        current_app.logger.info('is view_high {}'.format(view_high))
+        view_min = min(view_high, view_wide)
+
+        import configparser
+        conf = configparser.ConfigParser()
+        conf_path = os.path.join(BASEDIR, 'inquiry', 'config', 'lightprice.cfg')
+        current_app.logger.info('get file = {}'.format(os.path.isfile(conf_path)))
+        conf.read(conf_path)
+        current_app.logger.info('get cfg {}'.format(conf.sections()))
+
+        gunlun_list = json.loads(conf.get('gunlun', 'gunlun'))
+        isgunlun = bool(list(set(ppvidlist).intersection(set(gunlun_list))))
+        current_app.logger.info('is gunlun {}'.format(isgunlun))
+
+        if isgunlun:
+            if view_wide <= first_num_gunlun:
+                # 单侧打光
+                num_light = (view_wide / Decimal(0.1))
+                test_light = "单侧高边侧光源："
+            elif view_wide <= second_num_gunlun:
+                # 双侧打光
+                test_light = "双侧高边侧光源："
+                num_light = (view_wide / Decimal(0.1)) * Decimal(2)
+            else:
+                # 背光源
+                test_light = "背光源："
+                current_app.logger.info('is  floor view_high {}'.format((view_high / Decimal(0.2))))
+                current_app.logger.info('is  floor view_wide {}'.format((view_wide / Decimal(0.2))))
+
+                num_light = (view_wide / Decimal(0.2)).quantize(Decimal("0.00")) * (view_high / Decimal(0.2)).quantize(
+                    Decimal("0.00"))
+        else:
+            if view_min <= first_num_no_gunlun:
+                # 单侧打光
+                test_light = "单侧短边侧光源："
+                num_light = (view_min / Decimal(0.1))
+            elif view_min <= second_num_no_gunlun:
+                # 双侧打光
+                test_light = "双侧短边侧光源:"
+                num_light = (view_min / Decimal(0.1)) * Decimal(2)
+            else:
+                # 背光源
+                test_light = "背光源："
+                num_light = (view_wide / Decimal(0.2)).quantize(Decimal("0.00")) * (view_high / Decimal(0.2)).quantize(
+                    Decimal("0.00"))
+        num_light = Decimal(num_light).quantize(Decimal("0"))
+        current_app.logger.info('is num_light {}'.format(num_light))
+        power = (num_light * Decimal(2.5)).quantize(Decimal("0.00"))
+        unit_price_light = (Decimal(conf.get('unit', 'price')) * coefficient).quantize(Decimal("0.00"))
+        price_light = (num_light * unit_price_light).quantize(Decimal("0.00"))
+        num_power, price_power, rate_power, unit_price = self._get_power(conf, power, coefficient)
+
+        cost_item_list.append(('光源', "{}{}颗".format(test_light, num_light), "元/颗", unit_price_light, price_light))
+        cost_item_list.append(('光源', "{}W 电源 * {} 个".format(rate_power, num_power), "元/个",
+                               unit_price.quantize(Decimal("0.00")), price_power.quantize(Decimal("0.00"))))
+        unit_price_loubao = (Decimal(conf.get('loubao', 'price')) * coefficient).quantize(Decimal("0.00"))
+        cost_item_list.append(('光源', '漏保', '元/个', unit_price_loubao, unit_price_loubao))
+        unit_price_dianliao = (Decimal(conf.get('dianliao', 'price1') if high * wide <= Decimal(4) else conf.get(
+            'dianliao', 'price2')) * coefficient).quantize(Decimal("0.00"))
+        cost_item_list.append(('光源', '电料', '元/台', unit_price_dianliao, unit_price_dianliao))
+
+        return price_power + unit_price_dianliao + unit_price_loubao + price_light
+
+    def _get_power(self, conf, power, coefficient):
+        sections = conf.sections()
+        sections = sorted([item for item in sections if 'w' in item])
+        for i in range(1, int(math.ceil(power / Decimal(75))) + 1):
+            for section in sections:
+                num_power = Decimal(i)
+                rate_power = Decimal(conf.get(section, 'rate'))
+                if Decimal(rate_power * i) > power:
+                    unit_price = Decimal(conf.get(section, 'price')) * coefficient
+                    price_power = unit_price * i
+                    return num_power, price_power, rate_power, unit_price
