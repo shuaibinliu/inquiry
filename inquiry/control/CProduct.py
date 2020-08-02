@@ -703,7 +703,7 @@ class CProduct(object):
         #     'e7300f40-d171-11ea-877a-fa163e8df331'
         # ]
         # 固定边长
-        loap_len = Decimal(1.2)
+        loap_len = Decimal(0.12)
         first_num_gunlun = Decimal(1.2)
         first_num_no_gunlun = Decimal(1.2)
         second_num_gunlun = Decimal(2)
@@ -729,34 +729,35 @@ class CProduct(object):
         if isgunlun:
             if view_wide <= first_num_gunlun:
                 # 单侧打光
-                num_light = (view_wide / Decimal(0.1))
+                num_light = (view_wide / Decimal(0.1) - Decimal(0.3))
                 test_light = "单侧高边侧光源："
             elif view_wide <= second_num_gunlun:
                 # 双侧打光
                 test_light = "双侧高边侧光源："
-                num_light = (view_wide / Decimal(0.1)) * Decimal(2)
+                num_light = (view_wide / Decimal(0.1) - Decimal(0.3)) * Decimal(2)
             else:
                 # 背光源
                 test_light = "背光源："
                 current_app.logger.info('is  floor view_high {}'.format((view_high / Decimal(0.2))))
                 current_app.logger.info('is  floor view_wide {}'.format((view_wide / Decimal(0.2))))
 
-                num_light = (view_wide / Decimal(0.2)).quantize(Decimal("0.00")) * (view_high / Decimal(0.2)).quantize(
-                    Decimal("0.00"))
+                num_light = (view_wide / Decimal(0.2) - Decimal(0.3)).quantize(Decimal("0")) * (
+                        view_high / Decimal(0.2) - Decimal(0.3)).quantize(Decimal("0"))
         else:
             if view_min <= first_num_no_gunlun:
                 # 单侧打光
                 test_light = "单侧短边侧光源："
-                num_light = (view_min / Decimal(0.1))
+                num_light = (view_min / Decimal(0.1) - Decimal(0.3))
             elif view_min <= second_num_no_gunlun:
                 # 双侧打光
                 test_light = "双侧短边侧光源:"
-                num_light = (view_min / Decimal(0.1)) * Decimal(2)
+                num_light = (view_min / Decimal(0.1) - Decimal(0.3)) * Decimal(2)
             else:
                 # 背光源
                 test_light = "背光源："
-                num_light = (view_wide / Decimal(0.2)).quantize(Decimal("0.00")) * (view_high / Decimal(0.2)).quantize(
-                    Decimal("0.00"))
+                num_light = (view_wide / Decimal(0.2) - Decimal(0.3)).quantize(Decimal("0.00")) * (
+                        view_high / Decimal(0.2) - Decimal(0.3)).quantize(Decimal("0.00"))
+
         num_light = Decimal(num_light).quantize(Decimal("0"))
         current_app.logger.info('is num_light {}'.format(num_light))
         power = (num_light * Decimal(2.5)).quantize(Decimal("0.00"))
