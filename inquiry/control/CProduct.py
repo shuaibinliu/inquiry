@@ -583,7 +583,8 @@ class CProduct(object):
                 cost += self._add_price(cost, cost_item_list, un, coefficient)
                 continue
         # 计算电源费用 todo 限制产品
-        cost += self._caculate_power(ppvidlist, wide, high, cost_item_list, coefficient)
+        if wide and high:
+            cost += self._caculate_power(ppvidlist, wide, high, cost_item_list, coefficient)
         # 计算人工费等依赖成本的费用
         unlist = Unit.query.join(UnitCategory, UnitCategory.UCid == Unit.UCid).filter(
             *filter_proudct, Unit.UCrequired == False, Unit.UNtype == UnitType.cost.value,
@@ -710,7 +711,7 @@ class CProduct(object):
         second_num_no_gunlun = Decimal(5)
         view_wide = wide - loap_len
         view_high = high - loap_len
-
+        # isback = False
         current_app.logger.info('is view_wide {}'.format(view_wide))
         current_app.logger.info('is view_high {}'.format(view_high))
         view_min = min(view_high, view_wide)
@@ -723,40 +724,57 @@ class CProduct(object):
         current_app.logger.info('get cfg {}'.format(conf.sections()))
 
         gunlun_list = json.loads(conf.get('gunlun', 'gunlun'))
+        back_list = json.loads(conf.get('back', 'back'))
         isgunlun = bool(list(set(ppvidlist).intersection(set(gunlun_list))))
+        isback = bool(list(set(ppvidlist).intersection(set(back_list))))
         current_app.logger.info('is gunlun {}'.format(isgunlun))
 
         if isgunlun:
-            if view_wide <= first_num_gunlun:
-                # 单侧打光
-                num_light = (view_wide / Decimal(0.1) - Decimal(0.3))
-                test_light = "单侧高边侧光源："
-            elif view_wide <= second_num_gunlun:
-                # 双侧打光
-                test_light = "双侧高边侧光源："
-                num_light = (view_wide / Decimal(0.1) - Decimal(0.3)) * Decimal(2)
+            if not isback:
+                if view_wide <= first_num_gunlun:
+                    # 单侧打光
+                    num_light = (view_wide / Decimal(0.1) - Decimal(0.3))
+                    test_light = "单侧高边侧光源："
+                elif view_wide <= second_num_gunlun:
+                    # 双侧打光
+                    test_light = "双侧高边侧光源："
+                    num_light = (view_wide / Decimal(0.1) - Decimal(0.3)) * Decimal(2)
+                else:
+                    # 背光源
+
+                    num_light = (view_wide / Decimal(0.2) - Decimal(0.3)).quantize(Decimal("0")) * (
+                            view_high / Decimal(0.2) - Decimal(0.3)).quantize(Decimal("0"))
+                    test_light = self._caculat_num(view_high, view_wide, num_light)
             else:
                 # 背光源
-                test_light = "背光源："
-                current_app.logger.info('is  floor view_high {}'.format((view_high / Decimal(0.2))))
-                current_app.logger.info('is  floor view_wide {}'.format((view_wide / Decimal(0.2))))
 
                 num_light = (view_wide / Decimal(0.2) - Decimal(0.3)).quantize(Decimal("0")) * (
                         view_high / Decimal(0.2) - Decimal(0.3)).quantize(Decimal("0"))
+
+                test_light = self._caculat_num(view_high, view_wide, num_light)
         else:
-            if view_min <= first_num_no_gunlun:
-                # 单侧打光
-                test_light = "单侧短边侧光源："
-                num_light = (view_min / Decimal(0.1) - Decimal(0.3))
-            elif view_min <= second_num_no_gunlun:
-                # 双侧打光
-                test_light = "双侧短边侧光源:"
-                num_light = (view_min / Decimal(0.1) - Decimal(0.3)) * Decimal(2)
+            if not isback:
+                if view_min <= first_num_no_gunlun:
+                    # 单侧打光
+                    test_light = "单侧短边侧光源："
+                    num_light = (view_min / Decimal(0.1) - Decimal(0.3))
+                elif view_min <= second_num_no_gunlun:
+                    # 双侧打光
+                    test_light = "双侧短边侧光源:"
+                    num_light = (view_min / Decimal(0.1) - Decimal(0.3)) * Decimal(2)
+                else:
+                    # 背光源
+
+                    num_light = (view_wide / Decimal(0.2) - Decimal(0.3)).quantize(Decimal("0")) * (
+                            view_high / Decimal(0.2) - Decimal(0.3)).quantize(Decimal("0"))
+                    test_light = self._caculat_num(view_high, view_wide, num_light)
+
             else:
                 # 背光源
-                test_light = "背光源："
-                num_light = (view_wide / Decimal(0.2) - Decimal(0.3)).quantize(Decimal("0.00")) * (
-                        view_high / Decimal(0.2) - Decimal(0.3)).quantize(Decimal("0.00"))
+
+                num_light = (view_wide / Decimal(0.2) - Decimal(0.3)).quantize(Decimal("0")) * (
+                        view_high / Decimal(0.2) - Decimal(0.3)).quantize(Decimal("0"))
+                test_light = self._caculat_num(view_high, view_wide, num_light)
 
         num_light = Decimal(num_light).quantize(Decimal("0"))
         current_app.logger.info('is num_light {}'.format(num_light))
@@ -783,7 +801,23 @@ class CProduct(object):
             for section in sections:
                 num_power = Decimal(i)
                 rate_power = Decimal(conf.get(section, 'rate'))
-                if Decimal(rate_power * i) > power:
+                if Decimal(rate_power * i) >= power:
                     unit_price = Decimal(conf.get(section, 'price')) * coefficient
                     price_power = unit_price * i
                     return num_power, price_power, rate_power, unit_price
+
+    def _caculat_num(self, high, wide, num_light):
+        if high < Decimal(1) and wide > high:
+            pai = (high / Decimal(0.2)).quantize(Decimal("0"))
+            tiao = ((wide / Decimal(0.2)).quantize(Decimal("0")) / Decimal(25)).quantize(Decimal('0'))
+            ke = (wide / Decimal(0.2)).quantize(Decimal("0"))
+            # ke = high /
+            return '背光源：{} * {} 条 * {}颗 = 总共 {}颗'.format(pai, tiao, ke, num_light)
+        else:
+            pai = (wide / Decimal(0.2)).quantize(Decimal("0"))
+            tiao = math.ceil(float(
+                (high / Decimal(0.2)).quantize(Decimal("0")) / Decimal(25)))
+            ke = (high / Decimal(0.2)).quantize(Decimal("0"))
+            current_app.logger.info('get pai {} , get tiao {} get ke {}'.format(pai, tiao, ke))
+            # ke = high /
+            return '背光源：{} * {} 条 * {}颗 = 总共 {}颗'.format(tiao, pai, ke, num_light)
