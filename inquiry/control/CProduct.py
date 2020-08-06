@@ -725,9 +725,14 @@ class CProduct(object):
 
         gunlun_list = json.loads(conf.get('gunlun', 'gunlun'))
         back_list = json.loads(conf.get('back', 'back'))
+        side_list = json.loads(conf.get('side', 'side'))
         isgunlun = bool(list(set(ppvidlist).intersection(set(gunlun_list))))
         isback = bool(list(set(ppvidlist).intersection(set(back_list))))
+        isside = bool(list(set(ppvidlist).intersection(set(side_list))))
         current_app.logger.info('is gunlun {}'.format(isgunlun))
+
+        if not isback and not isside:
+            return Decimal('0')
 
         if isgunlun:
             if not isback:
