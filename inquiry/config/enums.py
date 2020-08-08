@@ -735,7 +735,7 @@ class UnitType(Enum):
     cost = 90, '成本'
     minner = 100, '宽高较小值'
     mount = 110, '总额'
-
+    alarea = 120, '铝材周长'
 
 class ProductParamsType(Enum):
     wide = 10, '宽'

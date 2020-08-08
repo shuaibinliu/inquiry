@@ -544,17 +544,20 @@ class CProduct(object):
         # 成本
         cost = Decimal('0')
         cost_item_list = []
-        unlist = Unit.query.join(UnitCategory, UnitCategory.UCid == Unit.UCid).filter(*filter_proudct,
-                                                                                      Unit.UCrequired == True).all()
-        for un in unlist:
-            cost += self._add_price(cost, cost_item_list, un, coefficient)
+        # unlist = Unit.query.join(UnitCategory, UnitCategory.UCid == Unit.UCid).filter(*filter_proudct,
+        #                                                                               Unit.UCrequired == True).all()
+        # for un in unlist:
+        #     cost += self._add_price(cost, cost_item_list, un, coefficient)
         # 计算除人工费的其他费用
         unlist = Unit.query.join(UnitCategory, UnitCategory.UCid == Unit.UCid).filter(
-            *filter_proudct, Unit.UCrequired == False, Unit.UNtype != UnitType.cost.value,
+            *filter_proudct, Unit.UNtype != UnitType.cost.value,
                              Unit.UNtype != UnitType.mount.value, or_(Unit.PPVid == None, Unit.PPVid.in_(ppvidlist))
-        ).order_by(Unit.UNtype.asc(), Unit.UNlimit.asc()).all()
+        ).order_by(UnitCategory.UCsort.desc(), Unit.UNtype.asc(), Unit.UNlimit.asc()).all()
 
         for un in unlist:
+            if un.UCrequired == True:
+                cost += self._add_price(cost, cost_item_list, un, coefficient)
+                continue
             if un.UNtype == UnitType.wide.value:
                 if self._check_limit(wide, un):
                     cost += self._add_price(cost, cost_item_list, un, coefficient, wide)
@@ -575,6 +578,9 @@ class CProduct(object):
                 if self._check_limit(area, un):
                     cost += self._add_price(cost, cost_item_list, un, coefficient, area)
                 continue
+            elif un.UNtype == UnitType.alarea.value:
+                if self._check_limit(area, un):
+                    cost += self._add_price(cost, cost_item_list, un, coefficient, perimeter)
             elif un.UNtype == UnitType.minner.value:
                 if self._check_limit(minner, un):
                     cost += self._add_price(cost, cost_item_list, un, coefficient, minner)
