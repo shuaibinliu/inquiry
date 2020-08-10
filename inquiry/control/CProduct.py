@@ -593,7 +593,7 @@ class CProduct(object):
             cost += self._caculate_power(ppvidlist, wide, high, cost_item_list, coefficient)
         # 计算人工费等依赖成本的费用
         unlist = Unit.query.join(UnitCategory, UnitCategory.UCid == Unit.UCid).filter(
-            *filter_proudct, Unit.UCrequired == False, Unit.UNtype == UnitType.cost.value,
+            *filter_proudct, Unit.UNtype == UnitType.cost.value,
             or_(Unit.PPVid == None, Unit.PPVid.in_(ppvidlist))
         ).order_by(Unit.UNtype.asc(), Unit.UNlimit.asc()).all()
         # mount = Decimal(0)
@@ -608,7 +608,7 @@ class CProduct(object):
 
         # 计算 依赖总额的费用
         unlist = Unit.query.join(UnitCategory, UnitCategory.UCid == Unit.UCid).filter(
-            *filter_proudct, Unit.UCrequired == False, Unit.UNtype == UnitType.mount.value,
+            *filter_proudct, Unit.UNtype == UnitType.mount.value,
             or_(Unit.PPVid == None, Unit.PPVid.in_(ppvidlist))
         ).order_by(Unit.UNtype.asc(), Unit.UNlimit.asc()).all()
 
@@ -618,11 +618,11 @@ class CProduct(object):
 
         current_app.logger.info('get final_mount = {}'.format(final_mount))
 
-        cost_item_list.append(('合计', '', '', '', final_mount))
+        cost_item_list.append(('合计', '', '', '', '', final_mount))
         # 建立表格 todo
         filepath, filename = self._create_table(cost_item_list)
         cost_dict_list = [{'ucname': item[0], 'unname': item[1],
-                           'ununit': item[2], 'ununitprice': item[3], 'mount': item[4]} for item in cost_item_list]
+                           'ununit': "{} * {}".format(item[2], item[4]), 'ununitprice': item[3], 'mount': item[5]} for item in cost_item_list]
 
         # 创建查询记录
         with db.auto_commit():
@@ -645,7 +645,7 @@ class CProduct(object):
         cost_mount = (unitprice * param).quantize(Decimal("0.00"))
         uc = UnitCategory.query.filter(UnitCategory.UCid == un.UCid, UnitCategory.isdelete == false()).first()
         ucname = uc.UCname if uc else ""
-        cost_item_list.append((ucname, un.UNname, un.UNunit, unitprice, cost_mount))
+        cost_item_list.append((ucname, un.UNname, un.UNunit, unitprice, param, cost_mount))
         # cost += cost_mount
         return cost_mount
 
@@ -655,7 +655,7 @@ class CProduct(object):
         cost_mount = (unitprice * cost).quantize(Decimal("0.00"))
         uc = UnitCategory.query.filter(UnitCategory.UCid == un.UCid, UnitCategory.isdelete == false()).first()
         ucname = uc.UCname if uc else ""
-        cost_item_list.append((ucname, un.UNname, "", "", cost_mount))
+        cost_item_list.append((ucname, un.UNname, "", "", "", cost_mount))
         # cost += cost_mount
         return cost_mount
 
@@ -677,7 +677,7 @@ class CProduct(object):
         # return send_templates
 
     def _create_table(self, rows):
-        headers = ['灯箱部件', '物料名称', '单位', '单价', '合计']
+        headers = ['灯箱部件', '物料名称', '单位', '单价', '数量', '合计']
         data = tablib.Dataset(*rows, headers=headers, title='询价导出页面')
         now = datetime.now()
         aletive_dir = 'img/xls/{year}/{month}/{day}'.format(year=now.year, month=now.month, day=now.day)
@@ -794,14 +794,14 @@ class CProduct(object):
         price_light = (num_light * unit_price_light).quantize(Decimal("0.00"))
         num_power, price_power, rate_power, unit_price = self._get_power(conf, power, coefficient)
 
-        cost_item_list.append(('光源', "{}{}颗".format(test_light, num_light), "元/颗", unit_price_light, price_light))
-        cost_item_list.append(('光源', "{}W 电源 * {} 个".format(rate_power, num_power), "元/个",
-                               unit_price.quantize(Decimal("0.00")), price_power.quantize(Decimal("0.00"))))
+        cost_item_list.append(('光源', "{}".format(test_light), "元/颗", unit_price_light, num_light, price_light))
+        cost_item_list.append(('光源', "{}W 电源".format(rate_power), "元/个",
+                               unit_price.quantize(Decimal("0.00")), num_power, price_power.quantize(Decimal("0.00"))))
         unit_price_loubao = (Decimal(conf.get('loubao', 'price')) * coefficient).quantize(Decimal("0.00"))
-        cost_item_list.append(('光源', '漏保', '元/个', unit_price_loubao, unit_price_loubao))
+        cost_item_list.append(('光源', '漏保', '元/个', unit_price_loubao, '1', unit_price_loubao))
         unit_price_dianliao = (Decimal(conf.get('dianliao', 'price1') if high * wide <= Decimal(4) else conf.get(
             'dianliao', 'price2')) * coefficient).quantize(Decimal("0.00"))
-        cost_item_list.append(('光源', '电料', '元/台', unit_price_dianliao, unit_price_dianliao))
+        cost_item_list.append(('光源', '电料', '元/台', unit_price_dianliao, '1', unit_price_dianliao))
 
         return price_power + unit_price_dianliao + unit_price_loubao + price_light
 
