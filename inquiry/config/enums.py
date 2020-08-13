@@ -737,6 +737,7 @@ class UnitType(Enum):
     mount = 110, '总额'
     alarea = 120, '铝材周长'
 
+
 class ProductParamsType(Enum):
     wide = 10, '宽'
     high = 20, '高'

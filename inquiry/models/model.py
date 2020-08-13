@@ -138,6 +138,7 @@ class Unit(Base):
     UNlimit = Column(DECIMAL(precision=28, scale=2), comment='最大值')
     UNlimitMin = Column(DECIMAL(precision=28, scale=2), comment='最小值')
     PPVid = Column(String(64), comment='参数限制')
+    UNexnum = Column(DECIMAL(precision=28, scale=2), comment='倍数系数')
 
 
 class UserLoginTime(Base):

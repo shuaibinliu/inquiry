@@ -419,10 +419,10 @@ class CProduct(object):
     def set_un(self):
         admin = get_current_admin()
         data = parameter_required()
-        unid, ucid, unname, prid, ucrequired, ununit, ununitprice, untype, unlimit, unlimitmin, pcid, ppvid = data.get(
+        unid, ucid, unname, prid, ucrequired, ununit, ununitprice, untype, unlimit, unlimitmin, pcid, ppvid, unexnum = data.get(
             'unid'), data.get('ucid'), data.get('unname'), data.get('prid'), data.get('ucrequired'), data.get(
             'ununit'), data.get('ununitprice'), data.get('untype'), data.get(
-            'unlimit'), data.get('unlimitmin'), data.get('pcid'), data.get('ppvid')
+            'unlimit'), data.get('unlimitmin'), data.get('pcid'), data.get('ppvid'), data.get('unexnum')
         undict = {}
         if unname:
             undict['UNname'] = unname
@@ -468,6 +468,12 @@ class CProduct(object):
                 raise ParamsError('最小值只能是数字')
             undict['UNlimitMin'] = unlimitmin or 0
         undict['UCrequired'] = bool(ucrequired)
+        if unexnum:
+            try:
+                ununitprice = Decimal(unexnum)
+            except:
+                raise ParamsError('倍数系数只能是数字')
+            undict['UNexnum'] = unexnum
 
         with db.auto_commit():
             if not unid:
@@ -477,7 +483,8 @@ class CProduct(object):
                     raise ParamsError('单价缺失')
                 if not (pcid or prid):
                     raise ParamsError('商品或者商品分类必须指定')
-
+                if not unexnum:
+                    undict['UNexnum'] = 1
                 undict['UNid'] = str(uuid.uuid1())
                 uninstance = Unit.create(undict)
                 msg = '添加成功'
@@ -556,6 +563,28 @@ class CProduct(object):
 
         for un in unlist:
             if un.UCrequired == True:
+                if un.UNtype:
+                    if un.UNtype == UnitType.wide.value:
+                        if not self._check_limit(wide, un):
+                            continue
+                    elif un.UNtype == UnitType.high.value:
+                        if not self._check_limit(high, un):
+                            continue
+                    elif un.UNtype == UnitType.pillarshigh.value:
+                        if not self._check_limit(pillarshigh, un):
+                            continue
+                    elif un.UNtype == UnitType.perimeter.value:
+                        if not self._check_limit(perimeter, un):
+                            continue
+                    elif un.UNtype == UnitType.area.value:
+                        if not self._check_limit(area, un):
+                            continue
+                    elif un.UNtype == UnitType.alarea.value:
+                        if not self._check_limit(area, un):
+                            continue
+                    elif un.UNtype == UnitType.minner.value:
+                        if not self._check_limit(minner, un):
+                            continue
                 cost += self._add_price(cost, cost_item_list, un, coefficient)
                 continue
             if un.UNtype == UnitType.wide.value:
@@ -622,7 +651,8 @@ class CProduct(object):
         # 建立表格 todo
         filepath, filename = self._create_table(cost_item_list)
         cost_dict_list = [{'ucname': item[0], 'unname': item[1],
-                           'ununit': "{} * {}".format(item[2], item[4]), 'ununitprice': item[3], 'mount': item[5]} for item in cost_item_list]
+                           'ununit': "{} * {}".format(item[2], item[4]), 'ununitprice': item[3], 'mount': item[5]} for
+                          item in cost_item_list]
 
         # 创建查询记录
         with db.auto_commit():
@@ -640,12 +670,13 @@ class CProduct(object):
         return Success('询价成功', data={"mount": mount, "uhid": uh.UHid})
 
     def _add_price(self, cost, cost_item_list, un, coefficient, param=1):
+        unexnum = Decimal(un.UNexnum or 1)
         unitprice = Decimal(un.UNunitPrice) * coefficient
         # cost_item_list.append("{}: {} 元 {}".format(un.UNname, unitprice, un.UNunit))
-        cost_mount = (unitprice * param).quantize(Decimal("0.00"))
+        cost_mount = (unitprice * param * unexnum).quantize(Decimal("0.00"))
         uc = UnitCategory.query.filter(UnitCategory.UCid == un.UCid, UnitCategory.isdelete == false()).first()
         ucname = uc.UCname if uc else ""
-        cost_item_list.append((ucname, un.UNname, un.UNunit, unitprice, param, cost_mount))
+        cost_item_list.append((ucname, un.UNname, un.UNunit, unitprice, param * unexnum, cost_mount))
         # cost += cost_mount
         return cost_mount
 
