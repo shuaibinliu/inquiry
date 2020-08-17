@@ -548,6 +548,15 @@ class CProduct(object):
         filter_proudct = [or_(and_(Unit.PRid == product.PRid, ), Unit.PRid == None),
                           Unit.PCid == product.PCid,
                           Unit.isdelete == false(), UnitCategory.isdelete == false()]
+        import configparser
+        conf = configparser.ConfigParser()
+        conf_path = os.path.join(BASEDIR, 'inquiry', 'config', 'lightprice.cfg')
+
+        conf.read(conf_path)
+        subway = conf.get('subway', 'subway')
+        if product.PRid == subway:
+            filter_proudct.append(Unit.UNtype == UnitType.metro.value)
+
         # 成本
         cost = Decimal('0')
         cost_item_list = []
@@ -585,6 +594,7 @@ class CProduct(object):
                     elif un.UNtype == UnitType.minner.value:
                         if not self._check_limit(minner, un):
                             continue
+
                 cost += self._add_price(cost, cost_item_list, un, coefficient)
                 continue
             if un.UNtype == UnitType.wide.value:
@@ -619,7 +629,7 @@ class CProduct(object):
                 continue
         # 计算电源费用 todo 限制产品
         if wide and high:
-            cost += self._caculate_power(ppvidlist, wide, high, cost_item_list, coefficient)
+            cost += self._caculate_power(ppvidlist, wide, high, cost_item_list, coefficient, conf)
         # 计算人工费等依赖成本的费用
         unlist = Unit.query.join(UnitCategory, UnitCategory.UCid == Unit.UCid).filter(
             *filter_proudct, Unit.UNtype == UnitType.cost.value,
@@ -733,7 +743,7 @@ class CProduct(object):
         return ((un.UNlimit and params <= un.UNlimit) or not un.UNlimit) and (
                 (un.UNlimitMin and params > un.UNlimitMin) or not un.UNlimitMin)
 
-    def _caculate_power(self, ppvidlist, wide, high, cost_item_list, coefficient):
+    def _caculate_power(self, ppvidlist, wide, high, cost_item_list, coefficient, conf):
         # gunlun_list = [
         #     '0c3f8a78-d171-11ea-877a-fa163e8df331',
         #     '97db244e-d170-11ea-b88d-fa163e8df331',
@@ -753,12 +763,12 @@ class CProduct(object):
         current_app.logger.info('is view_high {}'.format(view_high))
         view_min = min(view_high, view_wide)
 
-        import configparser
-        conf = configparser.ConfigParser()
-        conf_path = os.path.join(BASEDIR, 'inquiry', 'config', 'lightprice.cfg')
-        current_app.logger.info('get file = {}'.format(os.path.isfile(conf_path)))
-        conf.read(conf_path)
-        current_app.logger.info('get cfg {}'.format(conf.sections()))
+        # import configparser
+        # conf = configparser.ConfigParser()
+        # conf_path = os.path.join(BASEDIR, 'inquiry', 'config', 'lightprice.cfg')
+        # current_app.logger.info('get file = {}'.format(os.path.isfile(conf_path)))
+        # conf.read(conf_path)
+        # current_app.logger.info('get cfg {}'.format(conf.sections()))
 
         gunlun_list = json.loads(conf.get('gunlun', 'gunlun'))
         back_list = json.loads(conf.get('back', 'back'))
